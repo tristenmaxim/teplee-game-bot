@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+      - uses: astral-sh/setup-uv@v5
+        if: steps.changes.outputs.backend == 'true'
+      - name: Install deps
+        if: steps.changes.outputs.backend == 'true'
+        working-directory: backend
+        run: uv sync
+      - name: Ruff
+        if: steps.changes.outputs.backend == 'true'
+        working-directory: backend
+        run: uv run ruff check .
+      - name: Pytest
+        if: steps.changes.outputs.backend == 'true'
+        working-directory: backend
+        run: uv run pytest
+
+  webapp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            webapp:
+              - 'webapp/**'
+      - uses: actions/setup-node@v4
+        if: steps.changes.outputs.webapp == 'true'
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: webapp/package-lock.json
+      - name: Install deps
+        if: steps.changes.outputs.webapp == 'true'
+        working-directory: webapp
+        run: npm ci
+      - name: Build
+        if: steps.changes.outputs.webapp == 'true'
+        working-directory: webapp
+        run: npm run build
