@@ -3,7 +3,7 @@
 Code/comments in English, user-facing texts in Russian per CLAUDE.md.
 """
 
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 LANG_FLAG = {"ru": "🇷🇺", "en": "🇬🇧"}
 
@@ -40,11 +40,11 @@ def render_game_message(
     return "\n".join(lines)
 
 
-def game_keyboard(webapp_url: str, lang: str) -> InlineKeyboardMarkup:
+def game_keyboard(lang: str) -> InlineKeyboardMarkup:
+    """No 'Открыть игру' button: Mini App is deferred to v1.5 (see ROADMAP)."""
     other = "🇬🇧 EN-слово" if lang == "ru" else "🇷🇺 RU-слово"
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🎮 Открыть игру", web_app=WebAppInfo(url=webapp_url))],
             [
                 InlineKeyboardButton(text="🎯 Загадать другу", callback_data="challenge"),
                 InlineKeyboardButton(text=other, callback_data="toggle_lang"),

@@ -2,11 +2,13 @@
 
 Telegram-игра: ежедневная семантическая головоломка (стиль Contexto) + челленджи «загадай слово другу». RU-интерфейс, слова RU и EN. Полная документация: `docs/PRD.md`, `docs/TECH_SPEC.md`, `docs/DATA_PIPELINE.md`, `docs/ROADMAP.md`, `docs/DEPLOY.md` — **читай релевантный док перед задачей.**
 
+**Приоритет v1 (см. ROADMAP.md):** сначала бот-версия целиком (движок, челленджи, деплой, полировка) — без Mini App. Mini App/webapp — отдельный цикл после того, как бот живёт в проде и есть первые метрики. Не начинать работу над `webapp/`, пока это явно не запрошено.
+
 ## Структура
 
 ```
 backend/    Python 3.12: FastAPI + aiogram 3 в одном asyncio-процессе. uv, ruff, pytest.
-webapp/     React 18 + Vite + TypeScript + Tailwind. Telegram Mini App.
+webapp/     React 18 + Vite + TypeScript + Tailwind. Telegram Mini App. Разработка отложена (см. выше).
 generator/  Офлайн-скрипты словарей/рангов. Не деплоится. Тяжёлые зависимости только тут.
 deploy/     docker-compose, Caddyfile, push_data.sh
 ```
@@ -24,7 +26,7 @@ deploy/     docker-compose, Caddyfile, push_data.sh
 ## Доменные правила
 
 - Ранг 1 = победа. Цвета: ≤100 🟩, ≤1000 🟨, иначе ⬜.
-- Лемматизация перед поиском: RU — pymorphy3 normal_form; EN — lookup в `en_forms.json`; всегда lowercase, ё→е.
+- Лемматизация перед поиском: пробуем слово **как есть** первым, потом лемму (RU — pymorphy3 normal_form с оверрайдами вроде `деньга→деньги`; EN — lookup в `en_forms.json`); всегда lowercase, ё→е. Surface-first обязателен: генератор force-include'ит омографы (`пар`, `сорока`, `деньги`), которых лемма не находит.
 - Повтор слова — не ошибка (вернуть существующий ранг, `is_new: false`).
 - `game_key`: `d:<day_id>:<lang>` (daily) | `c:<challenge_id>` (челлендж).
 - Слово челленджа обязано быть в guess-словаре; наружу никогда не отдаётся.

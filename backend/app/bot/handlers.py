@@ -9,7 +9,6 @@ from aiogram.filters import Command, CommandStart
 from aiogram.types import CallbackQuery, Message
 
 from app.bot import render
-from app.config import get_settings
 from app.db import Database
 from app.services import game
 from app.services.game import WordNotFound
@@ -44,7 +43,7 @@ async def update_game_message(
 ) -> None:
     """editMessageText of the single game message; resend if edit fails."""
     text, lang = await _game_view(db, user_id, last)
-    keyboard = render.game_keyboard(get_settings().webapp_url, lang)
+    keyboard = render.game_keyboard(lang)
     user = await game.get_user(db, user_id)
 
     lock = _edit_locks.setdefault(user_id, asyncio.Lock())

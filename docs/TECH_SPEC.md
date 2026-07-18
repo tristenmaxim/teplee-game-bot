@@ -21,6 +21,8 @@
 ### Почему polling, а не webhook
 Бот через long polling не требует входящего HTTPS → домен нужен только для API (Mini App обязан ходить по HTTPS). Меньше движущихся частей.
 
+**v1 (сейчас, см. ROADMAP):** Mini App и домен/HTTPS для API откладываются — деплоится только backend-контейнер с ботом, API используется им напрямую (без HTTP-прослойки), наружу не торчит.
+
 ### Память (бюджет 1 GB, из которого часть занята соседями)
 - Python + FastAPI + aiogram: ~120–180 MB
 - pymorphy3 словари: ~30 MB
@@ -175,7 +177,7 @@ NLTK/spaCy на сервере не нужны. Офлайн-генератор 
 ### Победа в челлендже
 Уведомление создателю (`send_message`), обёрнуто в try/except (мог заблокировать бота).
 
-## 7. Mini App (React + Vite + TS)
+## 7. Mini App (React + Vite + TS) — реализация отложена до v1.5, см. ROADMAP
 
 - Инициализация: `WebApp.ready(); WebApp.expand();` цвета из `themeParams` → CSS-переменные.
 - Стейт: React Query (или простой fetch + useState). При старте `GET /api/state`, дальше оптимистичные апдейты после `POST /guess`.
