@@ -37,16 +37,16 @@ jobs:
     needs: backend
     if: needs.backend.outputs.changed == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
     steps:
       - uses: actions/checkout@v4
+      # GITHUB_TOKEN can't push here: the package was created manually (personal
+      # token) before this workflow existed and isn't linked to this repo, so its
+      # per-repo Actions ACL has no access. Reusing the personal token instead.
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: tristenmaxim
+          password: ${{ secrets.GHCR_TOKEN }}
       - uses: docker/setup-buildx-action@v3
       - uses: docker/build-push-action@v6
         with:
