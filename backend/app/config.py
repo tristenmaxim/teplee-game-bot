@@ -2,11 +2,14 @@
 
 from functools import lru_cache
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
     bot_token: str = "test:token"
+    run_bot: bool = True
     webapp_url: str = "https://example.pages.dev"
     api_public_url: str = "http://localhost:8000"
     db_path: str = "data/game.db"
