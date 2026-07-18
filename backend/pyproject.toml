@@ -5,7 +5,10 @@ description = "Теплее! — backend: FastAPI API + aiogram bot in one async
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "aiosqlite>=0.22.1",
     "fastapi>=0.139.2",
+    "pydantic-settings>=2.14.2",
+    "pymorphy3>=2.0.6",
     "uvicorn[standard]>=0.51.0",
 ]
 
@@ -13,6 +16,7 @@ dependencies = [
 dev = [
     "httpx>=0.28.1",
     "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
     "ruff>=0.15.22",
 ]
 
@@ -22,3 +26,6 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
