@@ -18,11 +18,8 @@ def build_dispatcher(db: Database) -> Dispatcher:
     return dp
 
 
-async def run_bot(token: str, db: Database) -> None:
-    bot = Bot(token=token)
+async def run_bot(bot: Bot, db: Database) -> None:
+    """Caller owns the Bot instance (shared with the push scheduler) and its session."""
     dp = build_dispatcher(db)
     log.info("bot: starting long polling")
-    try:
-        await dp.start_polling(bot, handle_signals=False)
-    finally:
-        await bot.session.close()
+    await dp.start_polling(bot, handle_signals=False)

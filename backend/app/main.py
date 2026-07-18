@@ -6,12 +6,17 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from aiogram import Bot
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI
 
 from app.api import router
+from app.bot.push import send_daily_push
 from app.bot.runner import run_bot
 from app.config import get_settings
 from app.db import Database
+from app.services.clock import MSK
 from app.services.lemmatize import load_en_forms
 
 logging.basicConfig(level=logging.INFO)
@@ -27,15 +32,31 @@ async def lifespan(app: FastAPI):
         load_en_forms(en_forms_path)
 
     bot_task: asyncio.Task | None = None
+    scheduler: AsyncIOScheduler | None = None
+    bot: Bot | None = None
     if settings.run_bot and settings.bot_token != "test:token":
-        bot_task = asyncio.create_task(run_bot(settings.bot_token, app.state.db))
+        bot = Bot(token=settings.bot_token)
+        bot_task = asyncio.create_task(run_bot(bot, app.state.db))
+
+        scheduler = AsyncIOScheduler(timezone=MSK)
+        scheduler.add_job(
+            send_daily_push,
+            CronTrigger(hour=9, minute=0, timezone=MSK),
+            args=[bot, app.state.db],
+            id="daily_push",
+        )
+        scheduler.start()
 
     yield
 
+    if scheduler:
+        scheduler.shutdown(wait=False)
     if bot_task:
         bot_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await bot_task
+    if bot:
+        await bot.session.close()
     await app.state.db.close()
 
 
