@@ -1,0 +1,10 @@
+.DS_Store
+creds.txt
+.env
+.env.*
+*.db
+data/
+node_modules/
+__pycache__/
+.venv/
+dist/
