@@ -27,14 +27,17 @@ EXCLUDED_TAGS = {"Name", "Surn", "Patr", "Geox", "Orgn", "Abbr"}
 STOPLIST_RU = {
     "санкт", "динамо", "сити", "экс", "нью", "лос", "сан", "дель", "ван", "фон",
     "рада", "белые", "спартак", "зенит", "реал",
+    "водица",  # diminutive below the cosine gate
 }
 BROWN_MIN_SAMPLES = 5
 BROWN_MIN_NOUN_FRAC = 0.5
 
-# Pluralia-tantum-in-practice words whose pymorphy3 lemma is an archaic singular
-# ("деньги" -> "деньга"). Force the everyday surface form into the dictionary;
-# the backend lemmatizer must carry the mirror override (Этап 2).
-FORCE_INCLUDE_RU = {"деньги"}
+# Words the morphology filters reject for structural reasons but that players
+# unquestionably expect: "деньги" (pymorphy lemma is archaic "деньга") and
+# common homographs whose own-lemma probability mass is dominated by another
+# reading ("пар" by пара, "сорока" by сорок, "берет" by брать). The backend
+# lemmatizer must look words up as-is before falling back to normal_form (Этап 2).
+FORCE_INCLUDE_RU = {"деньги", "пар", "куб", "майка", "сорока", "берет", "том"}
 
 _morph = pymorphy3.MorphAnalyzer()
 
@@ -52,23 +55,28 @@ def is_valid_noun_ru(word: str) -> bool:
     # parse is accusative, for "море" locative — taking parse[0] alone silently
     # drops scores of common nouns. Also require normal_form == word so the
     # dictionary only holds lemmas (backend lemmatizes guesses the same way).
+    # But demand real probability mass behind the own-lemma reading: "вод"/"лет"
+    # sneak in via junk lexemes scored 0.0-0.12, while legit homonyms like
+    # "душ" (shower vs душа gen.pl) carry >= 0.25.
+    own_lemma_mass = 0.0
+    has_valid_nomn = False
     for parse in _morph.parse(word):
         tag = parse.tag
         if "NOUN" not in tag:
-            continue
-        if EXCLUDED_TAGS & tag.grammemes:
-            continue
-        if "nomn" not in tag:
-            continue
-        if "sing" not in tag and "Pltm" not in tag:
             continue
         nf = parse.normal_form.replace("ё", "е")
         # pymorphy3 lemmatizes -ье nouns to their archaic -ие twin
         # ("счастье" -> "счастие"); accept the modern surface form.
         if nf != word and not (word.endswith("ье") and nf == word[:-2] + "ие"):
             continue
-        return True
-    return False
+        own_lemma_mass += parse.score
+        if (
+            not (EXCLUDED_TAGS & tag.grammemes)
+            and "nomn" in tag
+            and ("sing" in tag or "Pltm" in tag)
+        ):
+            has_valid_nomn = True
+    return has_valid_nomn and own_lemma_mass >= 0.15
 
 
 @lru_cache(maxsize=1)
@@ -100,6 +108,8 @@ STOPLIST_EN = {
     "doggy", "doggo", "kitty", "mommy", "momma", "mummy", "daddy", "granny",
     "tummy", "piggy", "horsey", "birdy", "potty", "kiddo", "kiddie",
     "cigaret", "diam", "musci", "irak",
+    # foreign loans and slang that read as junk next to plain answers
+    "agua", "dinero", "moolah", "bunce", "gobs", "carfare", "lucre",
 }
 
 
@@ -126,7 +136,7 @@ def is_valid_noun_en(word: str) -> bool:
 # two vectors are semantically close. The cosine gate protects lexicalized
 # false positives (песок/пёс, замок/зам, cookie/cook stay in).
 
-DIM_COSINE_MIN = 0.45
+DIM_COSINE_MIN = 0.42
 DIM_BASE_MIN_LEN = 2
 
 # (suffix, base replacements), longest suffix first
@@ -163,7 +173,9 @@ DIM_EXCEPTIONS = {
            "ложка", "вилка", "белок", "кружка", "подушка", "игрушка", "бабочка",
            "курица", "площадка", "сетка", "клетка", "будка", "царица", "столица",
            "больница", "граница", "таблица", "улица", "пуговица", "гусеница",
-           "дворец", "ручка", "внучка", "конец", "птенец"},
+           "дворец", "ручка", "внучка", "конец", "птенец",
+           "мужик", "колокольчик", "лисица", "галочка", "истеричка", "упряжка",
+           "девица"},
     "en": {"cookie", "movie", "genie", "pixie", "eerie", "collie"},
 }
 
@@ -194,7 +206,14 @@ def filter_diminutives(
     removed: list[tuple[str, str, float]] = []
     for i, w in enumerate(words):
         hit = None
-        if w not in exceptions:
+        # -чик/-щик on an animate noun is an agent suffix (переводчик, заказчик),
+        # not a diminutive — only inanimate -чик words (стаканчик) get cut.
+        is_agent = (
+            lang == "ru"
+            and w.endswith(("чик", "щик"))
+            and any("NOUN" in p.tag and "anim" in p.tag for p in _morph.parse(w))
+        )
+        if w not in exceptions and not is_agent:
             for base in _dim_bases(w, lang):
                 j = index.get(base)
                 if j is None or j >= i:  # base must be a more frequent existing word
