@@ -1,13 +1,15 @@
 import json
-
-import aiosqlite
-import pytest
-import pytest_asyncio
-
-from app.db import Database
-from app.services import lemmatize
+import os
 
 BOT_TOKEN = "12345:TEST_TOKEN"
+os.environ.setdefault("BOT_TOKEN", BOT_TOKEN)
+
+import aiosqlite  # noqa: E402
+import pytest  # noqa: E402
+import pytest_asyncio  # noqa: E402
+
+from app.db import Database  # noqa: E402
+from app.services import lemmatize  # noqa: E402
 
 STATIC_SCHEMA = """
 CREATE TABLE words_rank (
