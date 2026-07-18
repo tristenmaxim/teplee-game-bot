@@ -28,10 +28,10 @@ Monorepo: `backend/` (FastAPI + aiogram, uv, ruff, pytest), `webapp/` (Vite Reac
 
 ---
 
-## Этап 4 — Деплой бота в прод · 1–2 дня
+## Этап 4 — Деплой бота в прод ✅ готово
 
-По `DEPLOY.md` Фаза 1: backend-контейнер (FastAPI + aiogram, long polling) на VPS через Docker Compose. **Без домена и без Caddy** — публичный HTTPS не нужен, пока нет Mini App и челленджей через API. GitHub Actions: test → build → push GHCR → SSH deploy. Перенос данных `push_data.sh`. apscheduler-пуш 09:00 МСК. `/api/health` мониторится локально на VPS.
-**Приёмка:** бот отвечает в Telegram 24/7 без локального dev-процесса на твоей машине; push в main обновляет прод; бэкапы `game.db` работают.
+По `DEPLOY.md` Фаза 1: backend-контейнер (FastAPI + aiogram, long polling) на VPS `146.103.114.81` через Docker Compose (`mem_limit: 300m`, порт 8000 только на loopback). GitHub Actions: ruff+pytest → build linux/amd64 → push GHCR → SSH deploy (авто на каждый push в `main` с изменениями в `backend/**`). Ежедневный пуш 09:00 МСК через apscheduler. Бэкапы `game.db` (cron, 7 копий) и health-monitoring (cron, алерт в Telegram на `ADMIN_ID`) настроены.
+**Приёмка:** ✅ бот `@teplee_game_bot` отвечает 24/7 в проде; полный цикл push→build→deploy проверен дважды вживую; сосед-контейнеры (VPN, hh-monitor) не пострадали (проверено `docker stats`/`free -h` до и после).
 
 ## Этап 5 — Полировка + мягкий релиз голого бота · 2–3 дня
 

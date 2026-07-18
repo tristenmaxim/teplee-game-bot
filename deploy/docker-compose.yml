@@ -1,0 +1,16 @@
+services:
+  backend:
+    image: ghcr.io/tristenmaxim/teplee-backend:latest
+    container_name: teplee-backend
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "127.0.0.1:8000:8000"  # loopback only — local healthcheck.sh, not public
+    volumes:
+      - ./data:/data
+    mem_limit: 300m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
