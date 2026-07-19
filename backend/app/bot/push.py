@@ -10,8 +10,9 @@ import logging
 from aiogram import Bot
 from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
 
+from app.bot import render
 from app.db import Database
-from app.services import clock
+from app.services import clock, game
 
 log = logging.getLogger(__name__)
 
@@ -46,14 +47,29 @@ async def send_daily_push(bot: Bot, db: Database) -> None:
 
     sent = forbidden = 0
     for i, row in enumerate(rows):
-        text = _push_text(day_id, row["lang_mode"], yesterday.get(row["lang_mode"]))
+        telegram_id = row["telegram_id"]
+        lang = row["lang_mode"]
+        blurb = _push_text(day_id, lang, yesterday.get(lang))
+        game_key = game.daily_game_key(lang, day_id)
+        s = await game.state(db, telegram_id, game_key, lang)
+        game_text = render.render_game_message(s["day_no"], lang, s["attempts"], None, s["solved"])
+        text = f"{blurb}\n\n{game_text}"
+        keyboard = render.game_keyboard(lang)
         try:
-            await bot.send_message(row["telegram_id"], text)
+            msg = await bot.send_message(telegram_id, text, reply_markup=keyboard)
+            await db.conn.execute(
+                "UPDATE users SET game_message_id = ? WHERE telegram_id = ?",
+                (msg.message_id, telegram_id),
+            )
             sent += 1
         except TelegramRetryAfter as e:
             await asyncio.sleep(e.retry_after)
             try:
-                await bot.send_message(row["telegram_id"], text)
+                msg = await bot.send_message(telegram_id, text, reply_markup=keyboard)
+                await db.conn.execute(
+                    "UPDATE users SET game_message_id = ? WHERE telegram_id = ?",
+                    (msg.message_id, telegram_id),
+                )
                 sent += 1
             except (TelegramForbiddenError, TelegramRetryAfter):
                 pass
@@ -61,7 +77,7 @@ async def send_daily_push(bot: Bot, db: Database) -> None:
             forbidden += 1
             await db.conn.execute(
                 "UPDATE users SET notifications = 0 WHERE telegram_id = ?",
-                (row["telegram_id"],),
+                (telegram_id,),
             )
         if (i + 1) % CHUNK_SIZE == 0:
             await db.conn.commit()

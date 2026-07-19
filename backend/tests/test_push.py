@@ -1,10 +1,17 @@
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
 
 from app.bot.push import _push_text, send_daily_push
 from app.services import game
+
+
+def _bot_with_message_ids(start: int = 100) -> AsyncMock:
+    bot = AsyncMock()
+    counter = iter(range(start, start + 1000))
+    bot.send_message.side_effect = lambda *a, **k: Mock(message_id=next(counter))
+    return bot
 
 
 def test_push_text_with_yesterday():
@@ -22,13 +29,15 @@ async def test_send_daily_push_happy_path(db):
     await game.ensure_user(db, 2)
     await game.set_lang(db, 2, "en")
 
-    bot = AsyncMock()
+    bot = _bot_with_message_ids()
     await send_daily_push(bot, db)
 
     assert bot.send_message.await_count == 2
     sent_ids = {call.args[0] for call in bot.send_message.await_args_list}
     assert sent_ids == {1, 2}
 
+    assert (await game.get_user(db, 1))["game_message_id"] is not None
+    assert (await game.get_user(db, 2))["game_message_id"] is not None
 
 async def test_send_daily_push_respects_mute(db):
     await game.ensure_user(db, 1)
@@ -56,7 +65,7 @@ async def test_send_daily_push_retries_after_flood_wait(db):
     bot = AsyncMock()
     bot.send_message.side_effect = [
         TelegramRetryAfter(method=None, message="flood", retry_after=0),
-        None,
+        Mock(message_id=101),
     ]
 
     await send_daily_push(bot, db)
@@ -69,7 +78,7 @@ async def test_send_daily_push_yesterday_word_by_lang(db):
     await game.ensure_user(db, 2)
     await game.set_lang(db, 2, "en")
 
-    bot = AsyncMock()
+    bot = _bot_with_message_ids()
     await send_daily_push(bot, db)
 
     texts = {call.args[0]: call.args[1] for call in bot.send_message.await_args_list}
