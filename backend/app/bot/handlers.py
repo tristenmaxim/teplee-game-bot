@@ -39,9 +39,15 @@ async def _game_view(db: Database, user_id: int, last: dict | None = None) -> tu
 
 
 async def update_game_message(
-    bot: Bot, db: Database, user_id: int, last: dict | None = None
+    bot: Bot, db: Database, user_id: int, last: dict | None = None, force_new: bool = False
 ) -> None:
-    """editMessageText of the single game message; resend if edit fails."""
+    """editMessageText of the single game message; resend if edit fails.
+
+    force_new: skip the edit and always send+re-anchor. Needed whenever other
+    messages were just sent to this chat (onboarding, /lang confirmation) —
+    otherwise the edit lands on a message now buried above that new text,
+    invisible next to the input box (see the day-1 daily-push bug).
+    """
     text, lang = await _game_view(db, user_id, last)
     keyboard = render.game_keyboard(lang)
     user = await game.get_user(db, user_id)
@@ -52,13 +58,13 @@ async def update_game_message(
         if wait > 0:
             await asyncio.sleep(wait)
         try:
-            if user["game_message_id"] is None:
-                raise TelegramBadRequest(method=None, message="no game message yet")
+            if force_new or user["game_message_id"] is None:
+                raise TelegramBadRequest(method=None, message="new game message needed")
             await bot.edit_message_text(
                 text, chat_id=user_id, message_id=user["game_message_id"], reply_markup=keyboard
             )
         except TelegramBadRequest as e:
-            if "message is not modified" in str(e):
+            if not force_new and "message is not modified" in str(e):
                 return
             msg = await bot.send_message(user_id, text, reply_markup=keyboard)
             await db.conn.execute(
@@ -87,7 +93,7 @@ async def cmd_start(message: Message, db: Database, bot: Bot) -> None:
         await message.answer(render.CHALLENGE_SOON)
     for part in render.ONBOARDING:
         await message.answer(part)
-    await update_game_message(bot, db, message.from_user.id)
+    await update_game_message(bot, db, message.from_user.id, force_new=True)
 
 
 @router.message(Command("help"))
@@ -102,7 +108,7 @@ async def cmd_lang(message: Message, db: Database, bot: Bot) -> None:
     await game.set_lang(db, message.from_user.id, new_lang)
     flag = render.LANG_FLAG[new_lang]
     await message.answer(f"Режим переключён: теперь угадываем {flag} слово!")
-    await update_game_message(bot, db, message.from_user.id)
+    await update_game_message(bot, db, message.from_user.id, force_new=True)
 
 
 @router.message(Command("stats"))
@@ -160,11 +166,8 @@ async def on_guess(message: Message, db: Database, bot: Bot) -> None:
         asyncio.create_task(_delete_later(bot, message.chat.id, err.message_id))
         return
 
-    await update_game_message(
-        bot, db, user_id, last={"word": result.word, "rank": result.rank}
-    )
-
-    if result.is_win and result.is_new:
+    is_win = result.is_win and result.is_new
+    if is_win:
         s = await game.state(db, user_id, game_key, lang)
         me = await bot.get_me()
         text = render.share_text(s["day_no"], lang, s["attempts"], result.streak, me.username)
@@ -173,3 +176,9 @@ async def on_guess(message: Message, db: Database, bot: Bot) -> None:
             f"Попыток: {result.attempts_count} · Стрик: {result.streak}🔥\n\n"
             f"Поделись результатом:\n{text}"
         )
+
+    # force_new after a win: the share message above would otherwise bury
+    # the edited game view, hiding it from any post-win extra guesses.
+    await update_game_message(
+        bot, db, user_id, last={"word": result.word, "rank": result.rank}, force_new=is_win
+    )
