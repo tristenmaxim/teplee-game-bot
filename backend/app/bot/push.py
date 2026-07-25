@@ -54,7 +54,7 @@ async def send_daily_push(bot: Bot, db: Database) -> None:
         s = await game.state(db, telegram_id, game_key, lang)
         game_text = render.render_game_message(s["day_no"], lang, s["attempts"], None, s["solved"])
         text = f"{blurb}\n\n{game_text}"
-        keyboard = render.game_keyboard(lang)
+        keyboard = render.game_keyboard()
         try:
             msg = await bot.send_message(telegram_id, text, reply_markup=keyboard)
             await db.conn.execute(

@@ -40,15 +40,15 @@ def render_game_message(
     return "\n".join(lines)
 
 
-def game_keyboard(lang: str) -> InlineKeyboardMarkup:
-    """No 'Открыть игру' button: Mini App is deferred to v1.5 (see ROADMAP)."""
-    other = "🇬🇧 EN-слово" if lang == "ru" else "🇷🇺 RU-слово"
+def game_keyboard() -> InlineKeyboardMarkup:
+    """No 'Открыть игру' button: Mini App is deferred to v1.5 (see ROADMAP).
+
+    Challenge and language-toggle buttons removed: challenges aren't built yet
+    (deep-link referral still shows CHALLENGE_SOON), and /lang already covers
+    language switching via the bot command menu.
+    """
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [
-                InlineKeyboardButton(text="🎯 Загадать другу", callback_data="challenge"),
-                InlineKeyboardButton(text=other, callback_data="toggle_lang"),
-            ],
             [InlineKeyboardButton(text="📋 Все слова", callback_data="show_all")],
         ]
     )

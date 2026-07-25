@@ -49,7 +49,7 @@ async def update_game_message(
     invisible next to the input box (see the day-1 daily-push bug).
     """
     text, lang = await _game_view(db, user_id, last)
-    keyboard = render.game_keyboard(lang)
+    keyboard = render.game_keyboard()
     user = await game.get_user(db, user_id)
 
     lock = _edit_locks.setdefault(user_id, asyncio.Lock())
@@ -137,20 +137,6 @@ async def cmd_unmute(message: Message, db: Database) -> None:
     )
     await db.conn.commit()
     await message.answer(render.UNMUTED)
-
-
-@router.callback_query(F.data == "toggle_lang")
-async def cb_toggle_lang(callback: CallbackQuery, db: Database, bot: Bot) -> None:
-    user = await game.get_user(db, callback.from_user.id)
-    new_lang = "en" if user["lang_mode"] == "ru" else "ru"
-    await game.set_lang(db, callback.from_user.id, new_lang)
-    await callback.answer(f"Теперь {render.LANG_FLAG[new_lang]}!")
-    await update_game_message(bot, db, callback.from_user.id)
-
-
-@router.callback_query(F.data == "challenge")
-async def cb_challenge(callback: CallbackQuery) -> None:
-    await callback.answer(render.CHALLENGE_SOON, show_alert=True)
 
 
 @router.callback_query(F.data == "show_all")
