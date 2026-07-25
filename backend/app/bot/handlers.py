@@ -150,22 +150,13 @@ async def cb_show_all(callback: CallbackQuery, db: Database, bot: Bot) -> None:
     await bot.send_message(user_id, render.render_full_list(s["attempts"], lang))
 
 
-@router.callback_query(F.data == "hint")
-async def cb_hint(callback: CallbackQuery, db: Database, bot: Bot) -> None:
-    user_id = callback.from_user.id
-    user = await game.get_user(db, user_id)
-    lang = user["lang_mode"]
-    game_key = game.daily_game_key(lang)
-    try:
-        result = await game.hint(db, user_id, game_key, lang)
-    except HintUnavailable as e:
-        await callback.answer(
-            render.HINT_NO_ATTEMPTS if e.reason == "no_attempts" else render.HINT_SOLVED,
-            show_alert=True,
-        )
-        return
+async def _deliver_hint(bot: Bot, db: Database, user_id: int, lang: str, game_key: str) -> None:
+    """Call game.hint and, on success, send win-share + refresh the game message.
 
-    await callback.answer()
+    Raises HintUnavailable if no attempts left or already solved — caller handles it.
+    """
+    result = await game.hint(db, user_id, game_key, lang)
+
     is_win = result.is_win and result.is_new
     if is_win:
         s = await game.state(db, user_id, game_key, lang)
@@ -181,6 +172,37 @@ async def cb_hint(callback: CallbackQuery, db: Database, bot: Bot) -> None:
     await update_game_message(
         bot, db, user_id, last={"word": result.word, "rank": result.rank}, force_new=True
     )
+
+
+@router.callback_query(F.data == "hint")
+async def cb_hint(callback: CallbackQuery, db: Database, bot: Bot) -> None:
+    user_id = callback.from_user.id
+    user = await game.get_user(db, user_id)
+    lang = user["lang_mode"]
+    game_key = game.daily_game_key(lang)
+    try:
+        await _deliver_hint(bot, db, user_id, lang, game_key)
+    except HintUnavailable as e:
+        await callback.answer(
+            render.HINT_NO_ATTEMPTS if e.reason == "no_attempts" else render.HINT_SOLVED,
+            show_alert=True,
+        )
+        return
+
+    await callback.answer()
+
+
+@router.message(Command("hint"))
+async def cmd_hint(message: Message, db: Database, bot: Bot) -> None:
+    user_id = message.from_user.id
+    user = await game.get_user(db, user_id)
+    lang = user["lang_mode"]
+    game_key = game.daily_game_key(lang)
+    try:
+        await _deliver_hint(bot, db, user_id, lang, game_key)
+    except HintUnavailable as e:
+        text = render.HINT_NO_ATTEMPTS if e.reason == "no_attempts" else render.HINT_SOLVED
+        await message.answer(text)
 
 
 @router.message(F.text & ~F.text.startswith("/"))
