@@ -49,8 +49,19 @@ def game_keyboard(lang: str) -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="🎯 Загадать другу", callback_data="challenge"),
                 InlineKeyboardButton(text=other, callback_data="toggle_lang"),
             ],
+            [InlineKeyboardButton(text="📋 Все слова", callback_data="show_all")],
         ]
     )
+
+
+def render_full_list(attempts: list[dict], lang: str) -> str:
+    """Full rank-sorted attempts list, unlike render_game_message's top-5 preview."""
+    lines = [f"📋 Все слова ({LANG_FLAG[lang]}) · Попыток: {len(attempts)}"]
+    if attempts:
+        lines += ["", *[f"{rank_emoji(a['rank'])} {a['rank']} · {a['word']}" for a in attempts]]
+    else:
+        lines += ["", "Пока ни одного слова — начни угадывать 🌡️"]
+    return "\n".join(lines)
 
 
 def share_text(day_no: int, lang: str, attempts: list[dict], streak: int, bot_username: str) -> str:

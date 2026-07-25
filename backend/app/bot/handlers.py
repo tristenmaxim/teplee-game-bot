@@ -29,6 +29,14 @@ async def _delete_later(bot: Bot, chat_id: int, message_id: int, delay: float = 
         pass
 
 
+async def _delete_user_message(bot: Bot, chat_id: int, message_id: int) -> None:
+    """Delete the user's own guess so it doesn't bury the fixed-position game message."""
+    try:
+        await bot.delete_message(chat_id, message_id)
+    except TelegramBadRequest:
+        pass
+
+
 async def _game_view(db: Database, user_id: int, last: dict | None = None) -> tuple[str, str]:
     user = await game.get_user(db, user_id)
     lang = user["lang_mode"]
@@ -153,6 +161,17 @@ async def cb_challenge(callback: CallbackQuery) -> None:
     await callback.answer(render.CHALLENGE_SOON, show_alert=True)
 
 
+@router.callback_query(F.data == "show_all")
+async def cb_show_all(callback: CallbackQuery, db: Database, bot: Bot) -> None:
+    user_id = callback.from_user.id
+    user = await game.get_user(db, user_id)
+    lang = user["lang_mode"]
+    game_key = game.daily_game_key(lang)
+    s = await game.state(db, user_id, game_key, lang)
+    await callback.answer()
+    await bot.send_message(user_id, render.render_full_list(s["attempts"], lang))
+
+
 @router.message(F.text & ~F.text.startswith("/"))
 async def on_guess(message: Message, db: Database, bot: Bot) -> None:
     user_id = message.from_user.id
@@ -164,7 +183,10 @@ async def on_guess(message: Message, db: Database, bot: Bot) -> None:
     except WordNotFound:
         err = await message.answer(render.WORD_NOT_FOUND)
         asyncio.create_task(_delete_later(bot, message.chat.id, err.message_id))
+        await _delete_user_message(bot, message.chat.id, message.message_id)
         return
+
+    await _delete_user_message(bot, message.chat.id, message.message_id)
 
     is_win = result.is_win and result.is_new
     if is_win:

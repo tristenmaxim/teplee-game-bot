@@ -5,7 +5,7 @@ even though it "worked" server-side. See update_game_message's force_new."""
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
-from app.bot.handlers import cmd_start, on_guess, update_game_message
+from app.bot.handlers import cb_show_all, cmd_start, on_guess, update_game_message
 from app.services import game
 
 
@@ -16,11 +16,19 @@ def _fake_bot(next_message_id: int = 100) -> AsyncMock:
     return bot
 
 
-def _fake_message(text: str, user_id: int = 1) -> SimpleNamespace:
+def _fake_message(text: str, user_id: int = 1, message_id: int = 321) -> SimpleNamespace:
     return SimpleNamespace(
         text=text,
+        message_id=message_id,
         from_user=SimpleNamespace(id=user_id, username="u", first_name="Test"),
         chat=SimpleNamespace(id=user_id),
+        answer=AsyncMock(),
+    )
+
+
+def _fake_callback(user_id: int = 1) -> SimpleNamespace:
+    return SimpleNamespace(
+        from_user=SimpleNamespace(id=user_id, username="u", first_name="Test"),
         answer=AsyncMock(),
     )
 
@@ -89,6 +97,7 @@ async def test_on_guess_non_win_edits_in_place(db, monkeypatch):
     bot.edit_message_text.assert_awaited_once()
     bot.send_message.assert_not_called()
     message.answer.assert_not_called()
+    bot.delete_message.assert_awaited_once_with(message.chat.id, message.message_id)
 
 
 async def test_on_guess_win_forces_new_game_message_after_share_text(db, monkeypatch):
@@ -112,3 +121,37 @@ async def test_on_guess_win_forces_new_game_message_after_share_text(db, monkeyp
     bot.edit_message_text.assert_not_called()
     bot.send_message.assert_awaited_once()
     assert (await game.get_user(db, 1))["game_message_id"] == 222
+    bot.delete_message.assert_awaited_once_with(message.chat.id, message.message_id)
+
+
+async def test_on_guess_word_not_found_deletes_user_message(db, monkeypatch):
+    monkeypatch.setattr(
+        "app.bot.handlers.game.daily_game_key", lambda lang, day_id=None: f"d:0:{lang}"
+    )
+    await game.ensure_user(db, 1)
+
+    bot = _fake_bot()
+    message = _fake_message("несуществующееслово")
+
+    await on_guess(message, db, bot)
+
+    bot.delete_message.assert_awaited_once_with(message.chat.id, message.message_id)
+
+
+async def test_cb_show_all_sends_full_list_without_touching_game_message(db, monkeypatch):
+    monkeypatch.setattr(
+        "app.bot.handlers.game.daily_game_key", lambda lang, day_id=None: f"d:0:{lang}"
+    )
+    await game.ensure_user(db, 1)
+    await db.conn.execute("UPDATE users SET game_message_id = 111 WHERE telegram_id = 1")
+    await db.conn.commit()
+
+    bot = _fake_bot()
+    callback = _fake_callback()
+
+    await cb_show_all(callback, db, bot)
+
+    callback.answer.assert_awaited_once_with()
+    bot.send_message.assert_awaited_once()
+    assert "Все слова" in bot.send_message.await_args.args[1]
+    bot.edit_message_text.assert_not_called()
