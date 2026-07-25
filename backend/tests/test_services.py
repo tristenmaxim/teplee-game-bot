@@ -118,10 +118,57 @@ async def test_hint_no_attempts_raises(db):
     assert exc.value.reason == "no_attempts"
 
 
-async def test_hint_halves_best_rank(db):
+async def test_hint_never_reveals_rank_1(db):
+    # best=2 ("кошка") -> target=max(2, 2//2)=2, but rank 2's word ("кошка")
+    # is already attempted (it's the guess that set best=2) -> skip to rank 3
+    # ("собака"), which is unattempted.
     await game.guess(db, 1, "d:0:ru", "ru", "кошка")  # rank 2
     r = await game.hint(db, 1, "d:0:ru", "ru")
-    assert (r.word, r.rank, r.is_win) == ("кот", 1, True)
+    assert (r.word, r.rank, r.is_win) == ("собака", 3, False)
+
+
+async def test_hint_never_wins_even_when_old_logic_would_have(db):
+    """Old behavior: best=2 -> target_rank=1 -> hint reveals the answer and
+    wins. New behavior: target is clamped to >= 2, so a hint can never itself
+    be a win."""
+    await game.guess(db, 1, "d:0:ru", "ru", "кошка")  # rank 2
+    r = await game.hint(db, 1, "d:0:ru", "ru")
+    assert r.is_win is False
+    assert r.rank >= 2
+
+
+async def test_hint_skips_already_attempted_words(db):
+    # Manually attempt rank 2 and rank 3 first, so hint must walk to rank 4+.
+    # best stays 2 ("кошка"), target=2 ("кошка", attempted) -> 3 ("собака",
+    # attempted) -> 4 (no word at that rank in the fixture) -> HintUnavailable.
+    await game.guess(db, 1, "d:0:ru", "ru", "кошка")  # rank 2
+    await game.guess(db, 1, "d:0:ru", "ru", "собака")  # rank 3
+    with pytest.raises(game.HintUnavailable) as exc:
+        await game.hint(db, 1, "d:0:ru", "ru")
+    assert exc.value.reason == "no_attempts"
+
+
+async def test_hint_hints_used_increments_across_manual_guess_and_two_hints(db, fake_vectors):
+    # The daily fixture's ranks (1/2/3/100/200) are too sparse to chain two
+    # hints (any hole in the rank sequence terminates the walk-forward), so
+    # use the challenge fixture instead: its 5-word vocab gets a full
+    # contiguous 1..5 ranking, with room for two consecutive hint walks.
+    challenge_id = await challenge.create(db, fake_vectors, 1, "ru", "кот")
+    game_key = f"c:{challenge_id}"
+
+    cur = await db.conn.execute(
+        "SELECT word FROM challenge_rank WHERE challenge_id = ? AND rank = 5", (challenge_id,)
+    )
+    farthest = (await cur.fetchone())["word"]
+
+    r0 = await game.guess(db, 2, game_key, "ru", farthest)  # manual guess, rank 5
+    assert r0.hints_used == 0
+
+    r1 = await game.hint(db, 2, game_key, "ru")  # target=max(2, 5//2)=2
+    assert (r1.rank, r1.hints_used) == (2, 1)
+
+    r2 = await game.hint(db, 2, game_key, "ru")  # target=max(2, 2//2)=2, taken -> 3
+    assert (r2.rank, r2.hints_used) == (3, 2)
 
 
 async def test_hint_already_solved_raises(db):

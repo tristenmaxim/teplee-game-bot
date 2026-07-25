@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS users (
   streak       INTEGER DEFAULT 0,
   last_win_day INTEGER,
   referred_by  TEXT,
+  last_challenge_id TEXT,
   created_at   TEXT DEFAULT (datetime('now'))
 );
 
@@ -28,6 +29,7 @@ CREATE TABLE IF NOT EXISTS attempts (
   game_key    TEXT    NOT NULL,
   word        TEXT    NOT NULL,
   rank        INTEGER NOT NULL,
+  via_hint    INTEGER NOT NULL DEFAULT 0,
   created_at  TEXT DEFAULT (datetime('now')),
   PRIMARY KEY (telegram_id, game_key, word)
 );
@@ -61,6 +63,22 @@ CREATE TABLE IF NOT EXISTS challenge_results (
 """
 
 
+async def _add_column_if_missing(
+    conn: aiosqlite.Connection, table: str, column: str, decl: str
+) -> None:
+    """Idempotent column-migration for a live prod DB.
+
+    CREATE TABLE IF NOT EXISTS in MIGRATIONS only creates missing tables, it
+    won't add a column to a table that already exists. SQLite's ADD COLUMN IF
+    NOT EXISTS is a newer feature (unverified on the prod container), so we
+    check PRAGMA table_info instead — portable across SQLite versions.
+    """
+    cur = await conn.execute(f"PRAGMA table_info({table})")
+    cols = {row["name"] for row in await cur.fetchall()}
+    if column not in cols:
+        await conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+
+
 class Database:
     def __init__(self, conn: aiosqlite.Connection):
         self.conn = conn
@@ -80,6 +98,8 @@ class Database:
                 "ATTACH DATABASE ? AS static", (f"file:{static_db_path}?mode=ro",)
             )
         await conn.executescript(MIGRATIONS)
+        await _add_column_if_missing(conn, "attempts", "via_hint", "INTEGER NOT NULL DEFAULT 0")
+        await _add_column_if_missing(conn, "users", "last_challenge_id", "TEXT")
         await conn.commit()
         return cls(conn)
 

@@ -64,7 +64,20 @@ async def _game_view(
 
     if challenge_meta is None:
         text = render.render_game_message(s["day_no"], lang, s["attempts"], last, s["solved"])
-        keyboard = render.game_keyboard()
+        has_challenge_to_return_to = False
+        last_challenge_id = user["last_challenge_id"]
+        if last_challenge_id:
+            meta = await challenge.get_meta(db, last_challenge_id)
+            if meta is None:
+                # Self-heal, same spirit as _resolve_game's stale-pointer handling:
+                # don't leave a dead "back to challenge" button hanging around.
+                await db.conn.execute(
+                    "UPDATE users SET last_challenge_id = NULL WHERE telegram_id = ?", (user_id,)
+                )
+                await db.conn.commit()
+            else:
+                has_challenge_to_return_to = True
+        keyboard = render.game_keyboard(has_challenge_to_return_to=has_challenge_to_return_to)
     else:
         creator = await game.get_user(db, challenge_meta["creator_id"])
         who = _display_name(creator)
@@ -130,9 +143,12 @@ async def cmd_start(message: Message, db: Database, bot: Bot) -> None:
         elif meta["creator_id"] == message.from_user.id:
             await message.answer(render.CHALLENGE_OWN_LINK)
         else:
+            # last_challenge_id stores the bare id (not "c:"-prefixed), matching
+            # the id challenge.get_meta() expects — active_game keeps the "c:"
+            # prefix since it's a generic game_key shared with daily's "d:" form.
             await db.conn.execute(
-                "UPDATE users SET active_game = ? WHERE telegram_id = ?",
-                (f"c:{challenge_id}", message.from_user.id),
+                "UPDATE users SET active_game = ?, last_challenge_id = ? WHERE telegram_id = ?",
+                (f"c:{challenge_id}", challenge_id, message.from_user.id),
             )
             await db.conn.commit()
             creator = await game.get_user(db, meta["creator_id"])
@@ -239,6 +255,29 @@ async def cb_back_to_daily(callback: CallbackQuery, db: Database, bot: Bot) -> N
     await update_game_message(bot, db, callback.from_user.id, force_new=True)
 
 
+@router.callback_query(F.data == "back_to_challenge")
+async def cb_back_to_challenge(callback: CallbackQuery, db: Database, bot: Bot) -> None:
+    user = await game.get_user(db, callback.from_user.id)
+    challenge_id = user["last_challenge_id"]
+    meta = await challenge.get_meta(db, challenge_id) if challenge_id else None
+    if meta is None:
+        if challenge_id:  # clear the dead pointer
+            await db.conn.execute(
+                "UPDATE users SET last_challenge_id = NULL WHERE telegram_id = ?",
+                (callback.from_user.id,),
+            )
+            await db.conn.commit()
+        await callback.answer(render.CHALLENGE_EXPIRED, show_alert=True)
+        return
+    await db.conn.execute(
+        "UPDATE users SET active_game = ? WHERE telegram_id = ?",
+        (f"c:{challenge_id}", callback.from_user.id),
+    )
+    await db.conn.commit()
+    await callback.answer()
+    await update_game_message(bot, db, callback.from_user.id, force_new=True)
+
+
 @router.callback_query(F.data == "challenge_howto")
 async def cb_challenge_howto(callback: CallbackQuery) -> None:
     await callback.answer(render.CHALLENGE_HOWTO, show_alert=True)
@@ -274,8 +313,9 @@ async def _handle_win(
         text = render.share_text(s["day_no"], lang, s["attempts"], result.streak, me.username)
         await bot.send_message(
             user_id,
-            f"🎉 Да! Это «{result.word}» — ранг 1!\n"
-            f"Попыток: {result.attempts_count} · Стрик: {result.streak}🔥\n\n"
+            f"🎉 Да! Это «{result.word}» — ранг 1!\n\n"
+            f"Попыток: {result.attempts_count} · Подсказок: {result.hints_used} · "
+            f"Стрик: {result.streak}🔥\n\n"
             f"Поделись результатом:\n{text}",
         )
         return
@@ -284,7 +324,8 @@ async def _handle_win(
     await challenge.record_win(db, challenge_id, user_id, result.attempts_count)
     await bot.send_message(
         user_id,
-        f"🎉 Да! Это «{result.word}» — ранг 1!\nПопыток: {result.attempts_count}",
+        f"🎉 Да! Это «{result.word}» — ранг 1!\n\n"
+        f"Попыток: {result.attempts_count} · Подсказок: {result.hints_used}",
         reply_markup=render.challenge_win_keyboard(),
     )
 

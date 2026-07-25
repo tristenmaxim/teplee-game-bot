@@ -62,7 +62,9 @@ def render_challenge_message(
     return "\n".join(lines)
 
 
-def game_keyboard(in_challenge: bool = False) -> InlineKeyboardMarkup:
+def game_keyboard(
+    in_challenge: bool = False, has_challenge_to_return_to: bool = False
+) -> InlineKeyboardMarkup:
     """No 'Открыть игру' button: Mini App is deferred to v1.5 (see ROADMAP).
 
     in_challenge=True: playing someone else's challenge, so swap the "загадать
@@ -70,6 +72,10 @@ def game_keyboard(in_challenge: bool = False) -> InlineKeyboardMarkup:
     daily play): "Загадать другу" opens a stateless how-to alert rather than a
     dialog — Telegram gives bots no way to prefill a user's next message, so
     the button can't do more than tell them to type /challenge <слово>.
+
+    has_challenge_to_return_to (ignored when in_challenge=True): the user has
+    a last-played friend's challenge still valid, so add a way back into it —
+    otherwise "back to daily" is a one-way trip out of a challenge.
     """
     if in_challenge:
         return InlineKeyboardMarkup(
@@ -79,13 +85,16 @@ def game_keyboard(in_challenge: bool = False) -> InlineKeyboardMarkup:
                 [InlineKeyboardButton(text="🌡️ К слову дня", callback_data="back_to_daily")],
             ]
         )
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="📋 Все слова", callback_data="show_all")],
-            [InlineKeyboardButton(text="💡 Подсказка", callback_data="hint")],
-            [InlineKeyboardButton(text="🎯 Загадать другу", callback_data="challenge_howto")],
-        ]
-    )
+    rows = [
+        [InlineKeyboardButton(text="📋 Все слова", callback_data="show_all")],
+        [InlineKeyboardButton(text="💡 Подсказка", callback_data="hint")],
+        [InlineKeyboardButton(text="🎯 Загадать другу", callback_data="challenge_howto")],
+    ]
+    if has_challenge_to_return_to:
+        rows.append(
+            [InlineKeyboardButton(text="⚔️ К челленджу", callback_data="back_to_challenge")]
+        )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def challenge_win_keyboard() -> InlineKeyboardMarkup:

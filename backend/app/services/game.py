@@ -31,6 +31,7 @@ class GuessResult:
     is_win: bool
     attempts_count: int
     streak: int
+    hints_used: int
 
 
 async def ensure_user(
@@ -118,7 +119,12 @@ async def _update_streak(db: Database, telegram_id: int, day_id: int) -> int:
 
 
 async def guess(
-    db: Database, telegram_id: int, game_key: str, lang: str, raw_word: str
+    db: Database,
+    telegram_id: int,
+    game_key: str,
+    lang: str,
+    raw_word: str,
+    via_hint: bool = False,
 ) -> GuessResult:
     await ensure_user(db, telegram_id)
     word, rank = await _find_rank(db, game_key, raw_word, lang)
@@ -131,8 +137,9 @@ async def guess(
     is_new = existing is None
     if is_new:
         await db.conn.execute(
-            "INSERT INTO attempts (telegram_id, game_key, word, rank) VALUES (?, ?, ?, ?)",
-            (telegram_id, game_key, word, rank),
+            "INSERT INTO attempts (telegram_id, game_key, word, rank, via_hint) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (telegram_id, game_key, word, rank, via_hint),
         )
         await db.conn.commit()
 
@@ -141,6 +148,13 @@ async def guess(
         (telegram_id, game_key),
     )
     attempts_count = (await cur.fetchone())["n"]
+
+    cur = await db.conn.execute(
+        "SELECT COUNT(*) AS n FROM attempts WHERE telegram_id = ? AND game_key = ? "
+        "AND via_hint = 1",
+        (telegram_id, game_key),
+    )
+    hints_used = (await cur.fetchone())["n"]
 
     is_win = rank == 1
     streak = (await get_user(db, telegram_id))["streak"]
@@ -155,11 +169,16 @@ async def guess(
         is_win=is_win,
         attempts_count=attempts_count,
         streak=streak,
+        hints_used=hints_used,
     )
 
 
 async def hint(db: Database, telegram_id: int, game_key: str, lang: str) -> GuessResult:
-    """Reveal the word at half the rank of the user's best guess so far.
+    """Reveal the word at (at best) half the rank of the user's best guess so far.
+
+    Never reveals rank 1 (the answer): target_rank is clamped to >= 2. If that
+    rank's word was already attempted (manually or via an earlier hint), walk
+    forward to rank+1, +2, ... until an unattempted word is found.
 
     No cost, no limit, no cooldown — a hint is just the service guessing a
     specific word on the user's behalf, reusing guess()'s insert/win/streak logic.
@@ -174,24 +193,33 @@ async def hint(db: Database, telegram_id: int, game_key: str, lang: str) -> Gues
     if best <= 1:
         raise HintUnavailable("solved")
 
-    target_rank = best // 2
-    if game_key.startswith("d:"):
-        _, day_id, _ = game_key.split(":")
-        cur = await db.conn.execute(
-            "SELECT word FROM static.words_rank WHERE day_id = ? AND lang = ? AND rank = ?",
-            (int(day_id), lang, target_rank),
-        )
-    else:
-        challenge_id = game_key.removeprefix("c:")
-        cur = await db.conn.execute(
-            "SELECT word FROM challenge_rank WHERE challenge_id = ? AND rank = ?",
-            (challenge_id, target_rank),
-        )
-    row = await cur.fetchone()
-    if row is None:
-        raise HintUnavailable("no_attempts")
+    target_rank = max(2, best // 2)
+    while True:
+        if game_key.startswith("d:"):
+            _, day_id, _ = game_key.split(":")
+            cur = await db.conn.execute(
+                "SELECT word FROM static.words_rank WHERE day_id = ? AND lang = ? AND rank = ?",
+                (int(day_id), lang, target_rank),
+            )
+        else:
+            challenge_id = game_key.removeprefix("c:")
+            cur = await db.conn.execute(
+                "SELECT word FROM challenge_rank WHERE challenge_id = ? AND rank = ?",
+                (challenge_id, target_rank),
+            )
+        row = await cur.fetchone()
+        if row is None:
+            # Walked past the end of the vocab — astronomically rare in
+            # practice, reuse "no_attempts" rather than a bespoke reason.
+            raise HintUnavailable("no_attempts")
 
-    return await guess(db, telegram_id, game_key, lang, row["word"])
+        cur = await db.conn.execute(
+            "SELECT 1 FROM attempts WHERE telegram_id = ? AND game_key = ? AND word = ?",
+            (telegram_id, game_key, row["word"]),
+        )
+        if await cur.fetchone() is None:
+            return await guess(db, telegram_id, game_key, lang, row["word"], via_hint=True)
+        target_rank += 1
 
 
 async def state(db: Database, telegram_id: int, game_key: str, lang: str) -> dict:

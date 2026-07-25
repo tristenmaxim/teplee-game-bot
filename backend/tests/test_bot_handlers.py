@@ -9,6 +9,7 @@ from aiogram.exceptions import TelegramForbiddenError
 
 from app.bot import render
 from app.bot.handlers import (
+    cb_back_to_challenge,
     cb_back_to_daily,
     cb_hint,
     cb_show_all,
@@ -134,7 +135,9 @@ async def test_on_guess_win_forces_new_game_message_after_share_text(db, monkeyp
     message.answer.assert_not_called()
     bot.edit_message_text.assert_not_called()
     assert bot.send_message.await_count == 2  # share text + fresh game message
-    assert "Да!" in bot.send_message.await_args_list[0].args[1]
+    win_text = bot.send_message.await_args_list[0].args[1]
+    assert "Да!" in win_text
+    assert "Подсказок: 0" in win_text
     assert (await game.get_user(db, 1))["game_message_id"] == 222
 
 
@@ -179,7 +182,9 @@ async def test_cb_hint_reveals_word_and_sends_new_game_message(db, monkeypatch):
         "app.bot.handlers.game.daily_game_key", lambda lang, day_id=None: f"d:0:{lang}"
     )
     await game.ensure_user(db, 1)
-    await game.guess(db, 1, "d:0:ru", "ru", "кошка")  # best rank 2 -> hint reveals rank 1 "кот"
+    # best rank 2 ("кошка") -> hint walks to rank 3 "собака" (never rank 1,
+    # the answer — see Fix 1's max(2, best // 2) clamp).
+    await game.guess(db, 1, "d:0:ru", "ru", "кошка")
 
     bot = _fake_bot(next_message_id=222)
     callback = _fake_callback()
@@ -188,9 +193,9 @@ async def test_cb_hint_reveals_word_and_sends_new_game_message(db, monkeypatch):
 
     callback.answer.assert_awaited_once_with()
     bot.edit_message_text.assert_not_called()
-    assert bot.send_message.await_count == 2  # share text + fresh game message
+    assert bot.send_message.await_count == 1  # a hint can never itself be a win now
     game_msg = bot.send_message.await_args_list[-1].args[1]
-    assert "кот" in game_msg and "1" in game_msg
+    assert "собака" in game_msg and "3" in game_msg
 
 
 async def test_cb_hint_no_attempts_shows_alert_without_touching_game_message(db, monkeypatch):
@@ -421,3 +426,113 @@ async def test_cmd_challenge_limit_enforced(db, fake_vectors, monkeypatch):
     bot.edit_message_text.assert_awaited_once_with(
         render.CHALLENGE_LIMIT, chat_id=1, message_id=5
     )
+
+
+# --- last_challenge_id: "back to challenge" from daily (Fix 4) ---
+
+
+async def test_cmd_start_with_challenge_link_sets_last_challenge_id(db, fake_vectors):
+    await game.ensure_user(db, 2, username="creator")
+    challenge_id = await challenge.create(db, fake_vectors, 2, "ru", "кот")
+
+    bot = _fake_bot()
+    message = _fake_message(f"/start c_{challenge_id}", user_id=1)
+
+    await cmd_start(message, db, bot)
+
+    assert (await game.get_user(db, 1))["last_challenge_id"] == challenge_id
+
+
+async def test_cb_back_to_daily_preserves_last_challenge_id(db, fake_vectors):
+    await game.ensure_user(db, 2, username="creator")
+    challenge_id = await challenge.create(db, fake_vectors, 2, "ru", "кот")
+    await game.ensure_user(db, 1)
+    await db.conn.execute(
+        "UPDATE users SET active_game = ?, last_challenge_id = ? WHERE telegram_id = 1",
+        (f"c:{challenge_id}", challenge_id),
+    )
+    await db.conn.commit()
+
+    bot = _fake_bot()
+    callback = _fake_callback(user_id=1)
+
+    await cb_back_to_daily(callback, db, bot)
+
+    user = await game.get_user(db, 1)
+    assert user["active_game"] is None
+    assert user["last_challenge_id"] == challenge_id  # survives the trip back
+
+
+async def test_daily_keyboard_shows_back_to_challenge_button_when_valid(
+    db, monkeypatch, fake_vectors
+):
+    monkeypatch.setattr(
+        "app.bot.handlers.game.daily_game_key", lambda lang, day_id=None: f"d:0:{lang}"
+    )
+    await game.ensure_user(db, 2, username="creator")
+    challenge_id = await challenge.create(db, fake_vectors, 2, "ru", "кот")
+    await game.ensure_user(db, 1)
+    await db.conn.execute(
+        "UPDATE users SET last_challenge_id = ? WHERE telegram_id = 1", (challenge_id,)
+    )
+    await db.conn.commit()
+
+    bot = _fake_bot(next_message_id=222)
+    await update_game_message(bot, db, 1, force_new=True)
+
+    keyboard = bot.send_message.await_args.kwargs["reply_markup"]
+    callback_data = {btn.callback_data for row in keyboard.inline_keyboard for btn in row}
+    assert "back_to_challenge" in callback_data
+
+
+async def test_daily_keyboard_omits_button_without_last_challenge_id(db, monkeypatch):
+    monkeypatch.setattr(
+        "app.bot.handlers.game.daily_game_key", lambda lang, day_id=None: f"d:0:{lang}"
+    )
+    await game.ensure_user(db, 1)
+
+    bot = _fake_bot(next_message_id=222)
+    await update_game_message(bot, db, 1, force_new=True)
+
+    keyboard = bot.send_message.await_args.kwargs["reply_markup"]
+    callback_data = {btn.callback_data for row in keyboard.inline_keyboard for btn in row}
+    assert "back_to_challenge" not in callback_data
+
+
+async def test_cb_back_to_challenge_restores_active_game_and_challenge_view(db, fake_vectors):
+    await game.ensure_user(db, 2, username="creator")
+    challenge_id = await challenge.create(db, fake_vectors, 2, "ru", "кот")
+    await game.ensure_user(db, 1)
+    await db.conn.execute(
+        "UPDATE users SET last_challenge_id = ? WHERE telegram_id = 1", (challenge_id,)
+    )
+    await db.conn.commit()
+
+    bot = _fake_bot(next_message_id=222)
+    callback = _fake_callback(user_id=1)
+
+    await cb_back_to_challenge(callback, db, bot)
+
+    callback.answer.assert_awaited_once_with()
+    assert (await game.get_user(db, 1))["active_game"] == f"c:{challenge_id}"
+    bot.send_message.assert_awaited_once()
+    sent_text = bot.send_message.await_args.args[1]
+    assert "creator" in sent_text or "⚔️" in sent_text
+
+
+async def test_cb_back_to_challenge_expired_shows_alert_and_self_heals(db):
+    await game.ensure_user(db, 1)
+    await db.conn.execute(
+        "UPDATE users SET last_challenge_id = 'doesnotexist' WHERE telegram_id = 1"
+    )
+    await db.conn.commit()
+
+    bot = _fake_bot()
+    callback = _fake_callback(user_id=1)
+
+    await cb_back_to_challenge(callback, db, bot)
+
+    callback.answer.assert_awaited_once_with(render.CHALLENGE_EXPIRED, show_alert=True)
+    bot.send_message.assert_not_called()
+    assert (await game.get_user(db, 1))["active_game"] is None
+    assert (await game.get_user(db, 1))["last_challenge_id"] is None
