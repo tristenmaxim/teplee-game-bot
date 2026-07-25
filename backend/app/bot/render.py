@@ -50,6 +50,7 @@ def game_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="📋 Все слова", callback_data="show_all")],
+            [InlineKeyboardButton(text="💡 Подсказка", callback_data="hint")],
         ]
     )
 
@@ -96,3 +97,5 @@ WORD_NOT_FOUND = "🤷 Не знаю такого слова. Попытка н�
 MUTED = "🔕 Напоминания выключены. Вернуть: /unmute"
 UNMUTED = "🔔 Напоминания включены — жду тебя каждое утро!"
 CHALLENGE_SOON = "🎯 Челленджи уже почти готовы — появятся совсем скоро!"
+HINT_NO_ATTEMPTS = "🤷 Сначала напиши хотя бы одно слово — тогда будет от чего подсказывать!"
+HINT_SOLVED = "🏆 Уже угадано, подсказка ни к чему!"

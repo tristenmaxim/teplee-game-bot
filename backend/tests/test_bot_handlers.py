@@ -5,7 +5,8 @@ even though it "worked" server-side. See update_game_message's force_new."""
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
-from app.bot.handlers import cb_show_all, cmd_start, on_guess, update_game_message
+from app.bot import render
+from app.bot.handlers import cb_hint, cb_show_all, cmd_start, on_guess, update_game_message
 from app.services import game
 
 
@@ -158,4 +159,39 @@ async def test_cb_show_all_sends_full_list_without_touching_game_message(db, mon
     callback.answer.assert_awaited_once_with()
     bot.send_message.assert_awaited_once()
     assert "Все слова" in bot.send_message.await_args.args[1]
+    bot.edit_message_text.assert_not_called()
+
+
+async def test_cb_hint_reveals_word_and_sends_new_game_message(db, monkeypatch):
+    monkeypatch.setattr(
+        "app.bot.handlers.game.daily_game_key", lambda lang, day_id=None: f"d:0:{lang}"
+    )
+    await game.ensure_user(db, 1)
+    await game.guess(db, 1, "d:0:ru", "ru", "кошка")  # best rank 2 -> hint reveals rank 1 "кот"
+
+    bot = _fake_bot(next_message_id=222)
+    callback = _fake_callback()
+
+    await cb_hint(callback, db, bot)
+
+    callback.answer.assert_awaited_once_with()
+    bot.edit_message_text.assert_not_called()
+    assert bot.send_message.await_count == 2  # share text + fresh game message
+    game_msg = bot.send_message.await_args_list[-1].args[1]
+    assert "кот" in game_msg and "1" in game_msg
+
+
+async def test_cb_hint_no_attempts_shows_alert_without_touching_game_message(db, monkeypatch):
+    monkeypatch.setattr(
+        "app.bot.handlers.game.daily_game_key", lambda lang, day_id=None: f"d:0:{lang}"
+    )
+    await game.ensure_user(db, 1)
+
+    bot = _fake_bot()
+    callback = _fake_callback()
+
+    await cb_hint(callback, db, bot)
+
+    callback.answer.assert_awaited_once_with(render.HINT_NO_ATTEMPTS, show_alert=True)
+    bot.send_message.assert_not_called()
     bot.edit_message_text.assert_not_called()

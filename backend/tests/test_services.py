@@ -110,6 +110,27 @@ async def test_stats(db):
     assert s["wins"] == 1 and s["attempts_total"] == 1 and s["streak"] == 1
 
 
+# --- hint ---
+
+async def test_hint_no_attempts_raises(db):
+    with pytest.raises(game.HintUnavailable) as exc:
+        await game.hint(db, 1, "d:0:ru", "ru")
+    assert exc.value.reason == "no_attempts"
+
+
+async def test_hint_halves_best_rank(db):
+    await game.guess(db, 1, "d:0:ru", "ru", "кошка")  # rank 2
+    r = await game.hint(db, 1, "d:0:ru", "ru")
+    assert (r.word, r.rank, r.is_win) == ("кот", 1, True)
+
+
+async def test_hint_already_solved_raises(db):
+    await game.guess(db, 1, "d:0:ru", "ru", "кот")
+    with pytest.raises(game.HintUnavailable) as exc:
+        await game.hint(db, 1, "d:0:ru", "ru")
+    assert exc.value.reason == "solved"
+
+
 # --- initData ---
 
 def _make_init_data(user_id=777, auth_date=None, token=BOT_TOKEN):

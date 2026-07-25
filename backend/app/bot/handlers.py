@@ -11,7 +11,7 @@ from aiogram.types import CallbackQuery, Message
 from app.bot import render
 from app.db import Database
 from app.services import game
-from app.services.game import WordNotFound
+from app.services.game import HintUnavailable, WordNotFound
 
 router = Router()
 
@@ -148,6 +148,39 @@ async def cb_show_all(callback: CallbackQuery, db: Database, bot: Bot) -> None:
     s = await game.state(db, user_id, game_key, lang)
     await callback.answer()
     await bot.send_message(user_id, render.render_full_list(s["attempts"], lang))
+
+
+@router.callback_query(F.data == "hint")
+async def cb_hint(callback: CallbackQuery, db: Database, bot: Bot) -> None:
+    user_id = callback.from_user.id
+    user = await game.get_user(db, user_id)
+    lang = user["lang_mode"]
+    game_key = game.daily_game_key(lang)
+    try:
+        result = await game.hint(db, user_id, game_key, lang)
+    except HintUnavailable as e:
+        await callback.answer(
+            render.HINT_NO_ATTEMPTS if e.reason == "no_attempts" else render.HINT_SOLVED,
+            show_alert=True,
+        )
+        return
+
+    await callback.answer()
+    is_win = result.is_win and result.is_new
+    if is_win:
+        s = await game.state(db, user_id, game_key, lang)
+        me = await bot.get_me()
+        text = render.share_text(s["day_no"], lang, s["attempts"], result.streak, me.username)
+        await bot.send_message(
+            user_id,
+            f"🎉 Да! Это «{result.word}» — ранг 1!\n"
+            f"Попыток: {result.attempts_count} · Стрик: {result.streak}🔥\n\n"
+            f"Поделись результатом:\n{text}",
+        )
+
+    await update_game_message(
+        bot, db, user_id, last={"word": result.word, "rank": result.rank}, force_new=True
+    )
 
 
 @router.message(F.text & ~F.text.startswith("/"))

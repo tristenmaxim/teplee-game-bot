@@ -15,6 +15,14 @@ class WordNotFound(Exception):
     """The guess is not in the game dictionary."""
 
 
+class HintUnavailable(Exception):
+    """No attempts yet, or the game is already solved."""
+
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+        super().__init__(reason)
+
+
 @dataclass
 class GuessResult:
     word: str
@@ -148,6 +156,42 @@ async def guess(
         attempts_count=attempts_count,
         streak=streak,
     )
+
+
+async def hint(db: Database, telegram_id: int, game_key: str, lang: str) -> GuessResult:
+    """Reveal the word at half the rank of the user's best guess so far.
+
+    No cost, no limit, no cooldown — a hint is just the service guessing a
+    specific word on the user's behalf, reusing guess()'s insert/win/streak logic.
+    """
+    cur = await db.conn.execute(
+        "SELECT MIN(rank) AS best FROM attempts WHERE telegram_id = ? AND game_key = ?",
+        (telegram_id, game_key),
+    )
+    best = (await cur.fetchone())["best"]
+    if best is None:
+        raise HintUnavailable("no_attempts")
+    if best <= 1:
+        raise HintUnavailable("solved")
+
+    target_rank = best // 2
+    if game_key.startswith("d:"):
+        _, day_id, _ = game_key.split(":")
+        cur = await db.conn.execute(
+            "SELECT word FROM static.words_rank WHERE day_id = ? AND lang = ? AND rank = ?",
+            (int(day_id), lang, target_rank),
+        )
+    else:
+        challenge_id = game_key.removeprefix("c:")
+        cur = await db.conn.execute(
+            "SELECT word FROM challenge_rank WHERE challenge_id = ? AND rank = ?",
+            (challenge_id, target_rank),
+        )
+    row = await cur.fetchone()
+    if row is None:
+        raise HintUnavailable("no_attempts")
+
+    return await guess(db, telegram_id, game_key, lang, row["word"])
 
 
 async def state(db: Database, telegram_id: int, game_key: str, lang: str) -> dict:
