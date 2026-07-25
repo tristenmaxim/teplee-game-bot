@@ -16,10 +16,9 @@ def _fake_bot(next_message_id: int = 100) -> AsyncMock:
     return bot
 
 
-def _fake_message(text: str, user_id: int = 1, message_id: int = 321) -> SimpleNamespace:
+def _fake_message(text: str, user_id: int = 1) -> SimpleNamespace:
     return SimpleNamespace(
         text=text,
-        message_id=message_id,
         from_user=SimpleNamespace(id=user_id, username="u", first_name="Test"),
         chat=SimpleNamespace(id=user_id),
         answer=AsyncMock(),
@@ -81,7 +80,10 @@ async def test_cmd_start_reanchors_game_message_after_onboarding_text(db):
     assert (await game.get_user(db, 1))["game_message_id"] == 777
 
 
-async def test_on_guess_non_win_edits_in_place(db, monkeypatch):
+async def test_on_guess_non_win_sends_new_game_message(db, monkeypatch):
+    """Every guess response is a fresh message now, not an edit: live testing
+    showed edited-in-place messages stayed pinned at an old position and
+    were effectively invisible to the user."""
     monkeypatch.setattr(
         "app.bot.handlers.game.daily_game_key", lambda lang, day_id=None: f"d:0:{lang}"
     )
@@ -89,15 +91,15 @@ async def test_on_guess_non_win_edits_in_place(db, monkeypatch):
     await db.conn.execute("UPDATE users SET game_message_id = 111 WHERE telegram_id = 1")
     await db.conn.commit()
 
-    bot = _fake_bot()
+    bot = _fake_bot(next_message_id=222)
     message = _fake_message("деньги")  # rank 100 at day 0 ru, not a win
 
     await on_guess(message, db, bot)
 
-    bot.edit_message_text.assert_awaited_once()
-    bot.send_message.assert_not_called()
+    bot.edit_message_text.assert_not_called()
+    bot.send_message.assert_awaited_once()
     message.answer.assert_not_called()
-    bot.delete_message.assert_awaited_once_with(message.chat.id, message.message_id)
+    assert (await game.get_user(db, 1))["game_message_id"] == 222
 
 
 async def test_on_guess_win_forces_new_game_message_after_share_text(db, monkeypatch):
@@ -121,10 +123,11 @@ async def test_on_guess_win_forces_new_game_message_after_share_text(db, monkeyp
     bot.edit_message_text.assert_not_called()
     bot.send_message.assert_awaited_once()
     assert (await game.get_user(db, 1))["game_message_id"] == 222
-    bot.delete_message.assert_awaited_once_with(message.chat.id, message.message_id)
 
 
-async def test_on_guess_word_not_found_deletes_user_message(db, monkeypatch):
+async def test_on_guess_word_not_found_keeps_user_message(db, monkeypatch):
+    """The user's guess must survive in chat history — only the bot's own
+    'word not found' reply gets auto-deleted (via _delete_later)."""
     monkeypatch.setattr(
         "app.bot.handlers.game.daily_game_key", lambda lang, day_id=None: f"d:0:{lang}"
     )
@@ -135,7 +138,8 @@ async def test_on_guess_word_not_found_deletes_user_message(db, monkeypatch):
 
     await on_guess(message, db, bot)
 
-    bot.delete_message.assert_awaited_once_with(message.chat.id, message.message_id)
+    message.answer.assert_awaited_once()
+    bot.delete_message.assert_not_called()
 
 
 async def test_cb_show_all_sends_full_list_without_touching_game_message(db, monkeypatch):

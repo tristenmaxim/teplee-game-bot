@@ -17,7 +17,7 @@ deploy/     docker-compose, Caddyfile, push_data.sh
 
 - Сервер: 1 CPU / 1 GB RAM, на нём чужие контейнеры. **Никаких ML-моделей, spaCy, NLTK, torch в backend.** Только pymorphy3, numpy (матрица векторов), aiosqlite.
 - Бот — **long polling**, не webhook.
-- Ответ бота на попытку — **editMessageText** одного игрового сообщения, не новые сообщения.
+- Ответ бота на попытку — **новое сообщение** (send, не edit): живое тестирование показало, что editMessageText оставляет игровое сообщение на старой позиции в чате, и пользователь его не замечает. Каждая попытка пересоздаёт «игровое сообщение» (`users.game_message_id` обновляется на id нового сообщения).
 - SQLite: WAL, одно соединение на запись, `busy_timeout=5000`. Статические таблицы — отдельный файл `game_static.db` через `ATTACH` (read-only).
 - API-auth: только через валидацию Telegram `initData` (HMAC от BOT_TOKEN). Никогда не доверять `telegram_id` из тела запроса.
 - Секреты — только env (`BOT_TOKEN` и пр.), в git не коммитить.
