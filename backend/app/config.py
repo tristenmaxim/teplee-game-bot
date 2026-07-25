@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     db_path: str = "data/game.db"
     static_db_path: str = "data/game_static.db"
     data_dir: str = "data"  # en_forms.json, vectors (Этап 5)
+    bot_username: str = ""  # env BOT_USERNAME, for building t.me/<bot>?start=... challenge links
     admin_id: int = 0
     init_data_max_age_s: int = 24 * 3600
     rate_limit_guess_per_s: float = 5.0

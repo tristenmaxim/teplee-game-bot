@@ -5,7 +5,9 @@ from httpx import ASGITransport, AsyncClient
 
 from app import api
 from app.auth import sign_init_data
+from app.config import get_settings
 from app.main import app
+from app.services import challenge
 from tests.conftest import BOT_TOKEN
 
 
@@ -93,3 +95,30 @@ async def test_forged_telegram_id_ignored(client):
     await client.post("/api/guess", json={"word": "кот", "telegram_id": 42}, headers=h)
     s = (await client.get("/api/stats", headers=h)).json()
     assert s["wins"] == 1  # attempt landed on user 111, not 42
+
+
+async def test_post_challenge_returns_id_and_link(client, fake_vectors, monkeypatch):
+    monkeypatch.setattr(get_settings(), "data_dir", fake_vectors)
+    r = await client.post("/api/challenge", json={"word": "кот"}, headers=auth_headers())
+    assert r.status_code == 200
+    body = r.json()
+    assert body["link"] == f"https://t.me/teplee_bot?start=c_{body['id']}"
+
+
+async def test_post_challenge_word_not_found_409(client, fake_vectors, monkeypatch):
+    monkeypatch.setattr(get_settings(), "data_dir", fake_vectors)
+    r = await client.post(
+        "/api/challenge", json={"word": "абракадабрище"}, headers=auth_headers()
+    )
+    assert r.status_code == 409
+    assert r.json()["detail"] == "word_not_found"
+
+
+async def test_post_challenge_limit_429(client, fake_vectors, monkeypatch):
+    monkeypatch.setattr(get_settings(), "data_dir", fake_vectors)
+    h = auth_headers(user_id=222)
+    for _ in range(challenge.MAX_ACTIVE):
+        await client.post("/api/challenge", json={"word": "кот"}, headers=h)
+    r = await client.post("/api/challenge", json={"word": "кот"}, headers=h)
+    assert r.status_code == 429
+    assert r.json()["detail"] == "too_many_challenges"

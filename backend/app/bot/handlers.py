@@ -4,14 +4,15 @@ import asyncio
 import time
 
 from aiogram import Bot, F, Router
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.filters import Command, CommandStart
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 
 from app.bot import render
+from app.config import get_settings
 from app.db import Database
-from app.services import game
-from app.services.game import HintUnavailable, WordNotFound
+from app.services import challenge, game, vectors
+from app.services.game import GuessResult, HintUnavailable, WordNotFound
 
 router = Router()
 
@@ -19,6 +20,10 @@ router = Router()
 _edit_locks: dict[int, asyncio.Lock] = {}
 _last_edit: dict[int, float] = {}
 EDIT_MIN_INTERVAL = 1.0
+
+
+def _display_name(user: dict) -> str:
+    return f"@{user['username']}" if user["username"] else (user["first_name"] or "друг")
 
 
 async def _delete_later(bot: Bot, chat_id: int, message_id: int, delay: float = 3.0) -> None:
@@ -29,13 +34,43 @@ async def _delete_later(bot: Bot, chat_id: int, message_id: int, delay: float = 
         pass
 
 
-async def _game_view(db: Database, user_id: int, last: dict | None = None) -> tuple[str, str]:
+async def _resolve_game(db: Database, user: dict) -> tuple[str, str, dict | None]:
+    """(game_key, lang, challenge_meta). challenge_meta is None for daily play.
+
+    Self-heals: if user['active_game'] points at an expired/deleted challenge,
+    clears the column back to NULL and falls back to daily instead of erroring.
+    """
+    active = user["active_game"]
+    if not active:
+        return game.daily_game_key(user["lang_mode"]), user["lang_mode"], None
+
+    meta = await challenge.get_meta(db, active.removeprefix("c:"))
+    if meta is None:
+        await db.conn.execute(
+            "UPDATE users SET active_game = NULL WHERE telegram_id = ?", (user["telegram_id"],)
+        )
+        await db.conn.commit()
+        return game.daily_game_key(user["lang_mode"]), user["lang_mode"], None
+
+    return active, meta["lang"], meta
+
+
+async def _game_view(
+    db: Database, user_id: int, last: dict | None = None
+) -> tuple[str, InlineKeyboardMarkup]:
     user = await game.get_user(db, user_id)
-    lang = user["lang_mode"]
-    game_key = game.daily_game_key(lang)
+    game_key, lang, challenge_meta = await _resolve_game(db, user)
     s = await game.state(db, user_id, game_key, lang)
-    text = render.render_game_message(s["day_no"], lang, s["attempts"], last, s["solved"])
-    return text, lang
+
+    if challenge_meta is None:
+        text = render.render_game_message(s["day_no"], lang, s["attempts"], last, s["solved"])
+        keyboard = render.game_keyboard()
+    else:
+        creator = await game.get_user(db, challenge_meta["creator_id"])
+        who = _display_name(creator)
+        text = render.render_challenge_message(who, lang, s["attempts"], last, s["solved"])
+        keyboard = render.game_keyboard(in_challenge=True)
+    return text, keyboard
 
 
 async def update_game_message(
@@ -48,8 +83,7 @@ async def update_game_message(
     otherwise the edit lands on a message now buried above that new text,
     invisible next to the input box (see the day-1 daily-push bug).
     """
-    text, lang = await _game_view(db, user_id, last)
-    keyboard = render.game_keyboard()
+    text, keyboard = await _game_view(db, user_id, last)
     user = await game.get_user(db, user_id)
 
     lock = _edit_locks.setdefault(user_id, asyncio.Lock())
@@ -89,8 +123,26 @@ async def cmd_start(message: Message, db: Database, bot: Bot) -> None:
         referred_by=referred_by,
     )
     if referred_by:
-        # challenge deep links become playable in Этап 5
-        await message.answer(render.CHALLENGE_SOON)
+        challenge_id = referred_by.removeprefix("c_")
+        meta = await challenge.get_meta(db, challenge_id)
+        if meta is None:
+            await message.answer(render.CHALLENGE_EXPIRED)
+        elif meta["creator_id"] == message.from_user.id:
+            await message.answer(render.CHALLENGE_OWN_LINK)
+        else:
+            await db.conn.execute(
+                "UPDATE users SET active_game = ? WHERE telegram_id = ?",
+                (f"c:{challenge_id}", message.from_user.id),
+            )
+            await db.conn.commit()
+            creator = await game.get_user(db, meta["creator_id"])
+            await message.answer(render.challenge_intro_text(_display_name(creator)))
+    else:
+        # Bare /start: explicit return-to-daily, in case active_game was set.
+        await db.conn.execute(
+            "UPDATE users SET active_game = NULL WHERE telegram_id = ?", (message.from_user.id,)
+        )
+        await db.conn.commit()
     for part in render.ONBOARDING:
         await message.answer(part)
     await update_game_message(bot, db, message.from_user.id, force_new=True)
@@ -139,26 +191,84 @@ async def cmd_unmute(message: Message, db: Database) -> None:
     await message.answer(render.UNMUTED)
 
 
+@router.message(Command("challenge"))
+async def cmd_challenge(message: Message, db: Database, bot: Bot) -> None:
+    args = (message.text or "").split(maxsplit=1)
+    if len(args) < 2 or not args[1].strip():
+        await message.answer(render.CHALLENGE_USAGE)
+        return
+
+    user = await game.get_user(db, message.from_user.id)
+    lang = user["lang_mode"]
+    pending = await message.answer(render.CHALLENGE_PENDING)
+
+    try:
+        challenge_id = await challenge.create(
+            db, get_settings().data_dir, message.from_user.id, lang, args[1]
+        )
+    except WordNotFound:
+        await bot.edit_message_text(
+            render.CHALLENGE_WORD_NOT_FOUND, chat_id=message.chat.id, message_id=pending.message_id
+        )
+        return
+    except challenge.TooManyChallenges:
+        await bot.edit_message_text(
+            render.CHALLENGE_LIMIT, chat_id=message.chat.id, message_id=pending.message_id
+        )
+        return
+    except vectors.VectorsUnavailable:
+        await bot.edit_message_text(
+            render.CHALLENGE_UNAVAILABLE, chat_id=message.chat.id, message_id=pending.message_id
+        )
+        return
+
+    me = await bot.get_me()
+    link = f"https://t.me/{me.username}?start=c_{challenge_id}"
+    await bot.edit_message_text(
+        render.challenge_created_text(link), chat_id=message.chat.id, message_id=pending.message_id
+    )
+
+
+@router.callback_query(F.data == "back_to_daily")
+async def cb_back_to_daily(callback: CallbackQuery, db: Database, bot: Bot) -> None:
+    await db.conn.execute(
+        "UPDATE users SET active_game = NULL WHERE telegram_id = ?", (callback.from_user.id,)
+    )
+    await db.conn.commit()
+    await callback.answer()
+    await update_game_message(bot, db, callback.from_user.id, force_new=True)
+
+
+@router.callback_query(F.data == "challenge_howto")
+async def cb_challenge_howto(callback: CallbackQuery) -> None:
+    await callback.answer(render.CHALLENGE_HOWTO, show_alert=True)
+
+
+@router.callback_query(F.data == "reply_challenge")
+async def cb_reply_challenge(callback: CallbackQuery, bot: Bot) -> None:
+    await callback.answer()
+    await bot.send_message(callback.from_user.id, render.CHALLENGE_USAGE)
+
+
 @router.callback_query(F.data == "show_all")
 async def cb_show_all(callback: CallbackQuery, db: Database, bot: Bot) -> None:
     user_id = callback.from_user.id
     user = await game.get_user(db, user_id)
-    lang = user["lang_mode"]
-    game_key = game.daily_game_key(lang)
+    game_key, lang, _meta = await _resolve_game(db, user)
     s = await game.state(db, user_id, game_key, lang)
     await callback.answer()
     await bot.send_message(user_id, render.render_full_list(s["attempts"], lang))
 
 
-async def _deliver_hint(bot: Bot, db: Database, user_id: int, lang: str, game_key: str) -> None:
-    """Call game.hint and, on success, send win-share + refresh the game message.
+async def _handle_win(
+    bot: Bot, db: Database, user_id: int, lang: str, game_key: str, result: GuessResult
+) -> None:
+    """Send the win message appropriate to daily vs. challenge play.
 
-    Raises HintUnavailable if no attempts left or already solved — caller handles it.
+    Challenge wins also record the result and best-effort notify the creator —
+    a blocked/deleted creator chat must not break the winner's own flow.
     """
-    result = await game.hint(db, user_id, game_key, lang)
-
-    is_win = result.is_win and result.is_new
-    if is_win:
+    if game_key.startswith("d:"):
         s = await game.state(db, user_id, game_key, lang)
         me = await bot.get_me()
         text = render.share_text(s["day_no"], lang, s["attempts"], result.streak, me.username)
@@ -168,6 +278,36 @@ async def _deliver_hint(bot: Bot, db: Database, user_id: int, lang: str, game_ke
             f"Попыток: {result.attempts_count} · Стрик: {result.streak}🔥\n\n"
             f"Поделись результатом:\n{text}",
         )
+        return
+
+    challenge_id = game_key.removeprefix("c:")
+    await challenge.record_win(db, challenge_id, user_id, result.attempts_count)
+    await bot.send_message(
+        user_id,
+        f"🎉 Да! Это «{result.word}» — ранг 1!\nПопыток: {result.attempts_count}",
+        reply_markup=render.challenge_win_keyboard(),
+    )
+
+    meta = await challenge.get_meta(db, challenge_id)
+    if meta is not None:
+        winner = await game.get_user(db, user_id)
+        text = render.creator_notify_text(_display_name(winner), result.attempts_count)
+        try:
+            await bot.send_message(meta["creator_id"], text)
+        except (TelegramForbiddenError, TelegramBadRequest):
+            pass
+
+
+async def _deliver_hint(bot: Bot, db: Database, user_id: int, lang: str, game_key: str) -> None:
+    """Call game.hint and, on success, send win message + refresh the game message.
+
+    Raises HintUnavailable if no attempts left or already solved — caller handles it.
+    """
+    result = await game.hint(db, user_id, game_key, lang)
+
+    is_win = result.is_win and result.is_new
+    if is_win:
+        await _handle_win(bot, db, user_id, lang, game_key, result)
 
     await update_game_message(
         bot, db, user_id, last={"word": result.word, "rank": result.rank}, force_new=True
@@ -178,8 +318,7 @@ async def _deliver_hint(bot: Bot, db: Database, user_id: int, lang: str, game_ke
 async def cb_hint(callback: CallbackQuery, db: Database, bot: Bot) -> None:
     user_id = callback.from_user.id
     user = await game.get_user(db, user_id)
-    lang = user["lang_mode"]
-    game_key = game.daily_game_key(lang)
+    game_key, lang, _meta = await _resolve_game(db, user)
     try:
         await _deliver_hint(bot, db, user_id, lang, game_key)
     except HintUnavailable as e:
@@ -196,8 +335,7 @@ async def cb_hint(callback: CallbackQuery, db: Database, bot: Bot) -> None:
 async def cmd_hint(message: Message, db: Database, bot: Bot) -> None:
     user_id = message.from_user.id
     user = await game.get_user(db, user_id)
-    lang = user["lang_mode"]
-    game_key = game.daily_game_key(lang)
+    game_key, lang, _meta = await _resolve_game(db, user)
     try:
         await _deliver_hint(bot, db, user_id, lang, game_key)
     except HintUnavailable as e:
@@ -209,8 +347,7 @@ async def cmd_hint(message: Message, db: Database, bot: Bot) -> None:
 async def on_guess(message: Message, db: Database, bot: Bot) -> None:
     user_id = message.from_user.id
     user = await game.get_user(db, user_id)
-    lang = user["lang_mode"]
-    game_key = game.daily_game_key(lang)
+    game_key, lang, _meta = await _resolve_game(db, user)
     try:
         result = await game.guess(db, user_id, game_key, lang, message.text)
     except WordNotFound:
@@ -220,14 +357,7 @@ async def on_guess(message: Message, db: Database, bot: Bot) -> None:
 
     is_win = result.is_win and result.is_new
     if is_win:
-        s = await game.state(db, user_id, game_key, lang)
-        me = await bot.get_me()
-        text = render.share_text(s["day_no"], lang, s["attempts"], result.streak, me.username)
-        await message.answer(
-            f"🎉 Да! Это «{result.word}» — ранг 1!\n"
-            f"Попыток: {result.attempts_count} · Стрик: {result.streak}🔥\n\n"
-            f"Поделись результатом:\n{text}"
-        )
+        await _handle_win(bot, db, user_id, lang, game_key, result)
 
     # Always send a fresh game message rather than editing in place: live
     # testing showed editing left the game view buried at its old position,

@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from app.auth import InvalidInitData, TelegramUser, validate_init_data
 from app.config import get_settings
 from app.db import Database
-from app.services import game
+from app.services import challenge, game, vectors
 from app.services.game import WordNotFound
 
 router = APIRouter(prefix="/api")
@@ -103,6 +103,10 @@ class LangIn(BaseModel):
     lang: Literal["ru", "en"]
 
 
+class ChallengeIn(BaseModel):
+    word: str = Field(min_length=1, max_length=50)
+
+
 # --- endpoints ---
 
 @router.get("/health")
@@ -159,3 +163,27 @@ async def get_stats(
     db: Annotated[Database, Depends(get_db)],
 ):
     return await game.stats(db, user.id)
+
+
+@router.post("/challenge")
+async def post_challenge(
+    body: ChallengeIn,
+    user: Annotated[TelegramUser, Depends(current_user)],
+    db: Annotated[Database, Depends(get_db)],
+):
+    settings = get_settings()
+    game_user = await game.get_user(db, user.id)
+    try:
+        challenge_id = await challenge.create(
+            db, settings.data_dir, user.id, game_user["lang_mode"], body.word
+        )
+    except WordNotFound:
+        raise HTTPException(409, "word_not_found") from None
+    except challenge.TooManyChallenges:
+        raise HTTPException(429, "too_many_challenges") from None
+    except vectors.VectorsUnavailable:
+        raise HTTPException(503, "challenges_unavailable") from None
+    return {
+        "id": challenge_id,
+        "link": f"https://t.me/{settings.bot_username}?start=c_{challenge_id}",
+    }

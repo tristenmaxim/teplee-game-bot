@@ -4,7 +4,7 @@ from datetime import UTC, date, datetime
 import pytest
 
 from app.auth import InvalidInitData, sign_init_data, validate_init_data
-from app.services import clock, game
+from app.services import challenge, clock, game, vectors
 from app.services.lemmatize import lemma_ru, lookup_candidates, normalize
 from tests.conftest import BOT_TOKEN
 
@@ -164,3 +164,71 @@ def test_init_data_expired():
     old = _make_init_data(auth_date=int(time.time()) - 100_000)
     with pytest.raises(InvalidInitData):
         validate_init_data(old, BOT_TOKEN)
+
+
+# --- vectors ---
+
+async def test_vectors_rank_against_orders_by_similarity(fake_vectors):
+    ranking = await vectors.rank_against(fake_vectors, "ru", "кот")
+    ranks = dict(ranking)
+    assert ranks["кот"] == 1
+    assert ranks["собака"] < ranks["камень"]
+    assert ranks["собака"] < ranks["облако"]
+    assert ranks["щенок"] < ranks["камень"]
+    assert ranks["щенок"] < ranks["облако"]
+
+
+async def test_vectors_rank_against_unknown_word_returns_none(fake_vectors):
+    assert await vectors.rank_against(fake_vectors, "ru", "неизвестно") is None
+
+
+async def test_vectors_missing_lang_raises_unavailable(fake_vectors):
+    with pytest.raises(vectors.VectorsUnavailable):
+        await vectors.rank_against(fake_vectors, "en", "cat")
+
+
+# --- challenge ---
+
+async def test_challenge_create_and_roundtrip_guess(db, fake_vectors):
+    challenge_id = await challenge.create(db, fake_vectors, 1, "ru", "кот")
+
+    r = await game.guess(db, 2, f"c:{challenge_id}", "ru", "собака")
+    assert r.word == "собака"
+    r_far = await game.guess(db, 2, f"c:{challenge_id}", "ru", "камень")
+    assert r.rank < r_far.rank
+
+    r_win = await game.guess(db, 2, f"c:{challenge_id}", "ru", "кот")
+    assert r_win.rank == 1 and r_win.is_win is True
+
+
+async def test_challenge_create_word_not_in_dict_raises_word_not_found(db, fake_vectors):
+    with pytest.raises(game.WordNotFound):
+        await challenge.create(db, fake_vectors, 1, "ru", "абракадабрище")
+
+
+async def test_challenge_create_limit_enforced(db, fake_vectors):
+    for _ in range(challenge.MAX_ACTIVE):
+        await challenge.create(db, fake_vectors, 1, "ru", "кот")
+    with pytest.raises(challenge.TooManyChallenges):
+        await challenge.create(db, fake_vectors, 1, "ru", "кот")
+
+
+async def test_challenge_get_meta_none_when_expired(db):
+    await db.conn.execute(
+        """INSERT INTO challenges (id, creator_id, lang, word, expires_at)
+           VALUES ('expired1', 1, 'ru', 'кот', datetime('now', '-1 day'))"""
+    )
+    await db.conn.commit()
+    assert await challenge.get_meta(db, "expired1") is None
+
+
+async def test_challenge_get_meta_none_when_missing(db):
+    assert await challenge.get_meta(db, "nonexistent") is None
+
+
+async def test_record_win_idempotent(db):
+    await challenge.record_win(db, "c1", 1, 3)
+    await challenge.record_win(db, "c1", 1, 3)
+    cur = await db.conn.execute("SELECT * FROM challenge_results WHERE challenge_id = 'c1'")
+    rows = await cur.fetchall()
+    assert len(rows) == 1

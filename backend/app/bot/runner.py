@@ -15,6 +15,7 @@ BOT_COMMANDS = [
     BotCommand(command="lang", description="🇷🇺/🇬🇧 Сменить язык слова"),
     BotCommand(command="stats", description="📊 Статистика и стрик"),
     BotCommand(command="hint", description="💡 Подсказка"),
+    BotCommand(command="challenge", description="⚔️ Загадать другу"),
     BotCommand(command="mute", description="🔕 Выключить напоминания"),
     BotCommand(command="unmute", description="🔔 Включить напоминания"),
 ]

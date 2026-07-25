@@ -5,9 +5,19 @@ even though it "worked" server-side. See update_game_message's force_new."""
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
+from aiogram.exceptions import TelegramForbiddenError
+
 from app.bot import render
-from app.bot.handlers import cb_hint, cb_show_all, cmd_start, on_guess, update_game_message
-from app.services import game
+from app.bot.handlers import (
+    cb_back_to_daily,
+    cb_hint,
+    cb_show_all,
+    cmd_challenge,
+    cmd_start,
+    on_guess,
+    update_game_message,
+)
+from app.services import challenge, game
 
 
 def _fake_bot(next_message_id: int = 100) -> AsyncMock:
@@ -119,10 +129,12 @@ async def test_on_guess_win_forces_new_game_message_after_share_text(db, monkeyp
 
     await on_guess(message, db, bot)
 
-    message.answer.assert_awaited_once()
-    assert "Да!" in message.answer.await_args.args[0]
+    # Win text now goes through bot.send_message (shared _handle_win helper,
+    # same as the hint path), not message.answer.
+    message.answer.assert_not_called()
     bot.edit_message_text.assert_not_called()
-    bot.send_message.assert_awaited_once()
+    assert bot.send_message.await_count == 2  # share text + fresh game message
+    assert "Да!" in bot.send_message.await_args_list[0].args[1]
     assert (await game.get_user(db, 1))["game_message_id"] == 222
 
 
@@ -195,3 +207,217 @@ async def test_cb_hint_no_attempts_shows_alert_without_touching_game_message(db,
     callback.answer.assert_awaited_once_with(render.HINT_NO_ATTEMPTS, show_alert=True)
     bot.send_message.assert_not_called()
     bot.edit_message_text.assert_not_called()
+
+
+# --- challenges (Этап 5) ---
+
+
+async def test_cmd_start_with_challenge_link_sets_active_game_and_sends_intro(db, fake_vectors):
+    await game.ensure_user(db, 2, username="creator")
+    challenge_id = await challenge.create(db, fake_vectors, 2, "ru", "кот")
+
+    bot = _fake_bot()
+    message = _fake_message(f"/start c_{challenge_id}", user_id=1)
+
+    await cmd_start(message, db, bot)
+
+    assert (await game.get_user(db, 1))["active_game"] == f"c:{challenge_id}"
+    assert message.answer.await_count == 3  # intro + 2 onboarding parts
+    intro = message.answer.await_args_list[0].args[0]
+    assert "@creator" in intro
+
+
+async def test_cmd_start_own_challenge_link_blocked(db, fake_vectors):
+    challenge_id = await challenge.create(db, fake_vectors, 1, "ru", "кот")
+
+    bot = _fake_bot()
+    message = _fake_message(f"/start c_{challenge_id}", user_id=1)
+
+    await cmd_start(message, db, bot)
+
+    assert (await game.get_user(db, 1))["active_game"] is None
+    assert message.answer.await_args_list[0].args[0] == render.CHALLENGE_OWN_LINK
+
+
+async def test_cmd_start_expired_challenge_link(db):
+    bot = _fake_bot()
+    message = _fake_message("/start c_doesnotexist", user_id=1)
+
+    await cmd_start(message, db, bot)
+
+    assert (await game.get_user(db, 1))["active_game"] is None
+    assert message.answer.await_args_list[0].args[0] == render.CHALLENGE_EXPIRED
+
+
+async def test_cmd_start_bare_resets_active_game_to_daily(db):
+    await game.ensure_user(db, 1)
+    await db.conn.execute("UPDATE users SET active_game = 'c:whatever' WHERE telegram_id = 1")
+    await db.conn.commit()
+
+    bot = _fake_bot()
+    message = _fake_message("/start", user_id=1)
+
+    await cmd_start(message, db, bot)
+
+    assert (await game.get_user(db, 1))["active_game"] is None
+
+
+async def test_on_guess_routes_to_active_challenge(db, fake_vectors):
+    await game.ensure_user(db, 2, username="creator")
+    challenge_id = await challenge.create(db, fake_vectors, 2, "ru", "кот")
+    await game.ensure_user(db, 1)
+    await db.conn.execute(
+        f"UPDATE users SET active_game = 'c:{challenge_id}' WHERE telegram_id = 1"
+    )
+    await db.conn.commit()
+
+    bot = _fake_bot()
+    message = _fake_message("собака", user_id=1)
+
+    await on_guess(message, db, bot)
+
+    cur = await db.conn.execute("SELECT game_key FROM attempts WHERE telegram_id = 1")
+    rows = await cur.fetchall()
+    assert [r["game_key"] for r in rows] == [f"c:{challenge_id}"]
+
+
+async def test_stale_active_game_falls_back_to_daily(db, monkeypatch):
+    monkeypatch.setattr(
+        "app.bot.handlers.game.daily_game_key", lambda lang, day_id=None: f"d:0:{lang}"
+    )
+    await game.ensure_user(db, 1)
+    await db.conn.execute("UPDATE users SET active_game = 'c:doesnotexist' WHERE telegram_id = 1")
+    await db.conn.commit()
+
+    bot = _fake_bot()
+    message = _fake_message("кот", user_id=1)  # win at day 0 ru
+
+    await on_guess(message, db, bot)
+
+    assert (await game.get_user(db, 1))["active_game"] is None
+    cur = await db.conn.execute("SELECT game_key FROM attempts WHERE telegram_id = 1")
+    rows = await cur.fetchall()
+    assert [r["game_key"] for r in rows] == ["d:0:ru"]
+
+
+async def test_challenge_win_records_result_and_notifies_creator(db, fake_vectors):
+    await game.ensure_user(db, 2, username="creator")
+    challenge_id = await challenge.create(db, fake_vectors, 2, "ru", "кот")
+    await game.ensure_user(db, 1, username="winner")
+    await db.conn.execute(
+        f"UPDATE users SET active_game = 'c:{challenge_id}' WHERE telegram_id = 1"
+    )
+    await db.conn.commit()
+
+    bot = _fake_bot()
+    message = _fake_message("кот", user_id=1)  # win
+
+    await on_guess(message, db, bot)
+
+    cur = await db.conn.execute(
+        "SELECT * FROM challenge_results WHERE challenge_id = ? AND telegram_id = 1",
+        (challenge_id,),
+    )
+    assert await cur.fetchone() is not None
+
+    friend_calls = [c for c in bot.send_message.await_args_list if c.args[0] == 1]
+    creator_calls = [c for c in bot.send_message.await_args_list if c.args[0] == 2]
+    assert friend_calls  # win message (+ game message refresh)
+    assert len(creator_calls) == 1
+    assert "@winner" in creator_calls[0].args[1]
+
+
+async def test_challenge_win_notify_swallows_forbidden(db, fake_vectors):
+    await game.ensure_user(db, 2, username="creator")
+    challenge_id = await challenge.create(db, fake_vectors, 2, "ru", "кот")
+    await game.ensure_user(db, 1, username="winner")
+    await db.conn.execute(
+        f"UPDATE users SET active_game = 'c:{challenge_id}' WHERE telegram_id = 1"
+    )
+    await db.conn.commit()
+
+    def side_effect(*a, **k):
+        if a[0] == 2:
+            raise TelegramForbiddenError(method=None, message="bot was blocked by the user")
+        return Mock(message_id=999)
+
+    bot = _fake_bot()
+    bot.send_message.side_effect = side_effect
+    message = _fake_message("кот", user_id=1)  # win
+
+    await on_guess(message, db, bot)  # must not raise
+
+    friend_calls = [c for c in bot.send_message.await_args_list if c.args[0] == 1]
+    assert friend_calls  # friend still got their win message + game refresh
+
+
+async def test_cb_back_to_daily_clears_active_game(db):
+    await game.ensure_user(db, 1)
+    await db.conn.execute("UPDATE users SET active_game = 'c:whatever' WHERE telegram_id = 1")
+    await db.conn.commit()
+
+    bot = _fake_bot()
+    callback = _fake_callback(user_id=1)
+
+    await cb_back_to_daily(callback, db, bot)
+
+    callback.answer.assert_awaited_once_with()
+    assert (await game.get_user(db, 1))["active_game"] is None
+
+
+async def test_cmd_challenge_no_args_shows_usage(db):
+    bot = _fake_bot()
+    message = _fake_message("/challenge", user_id=1)
+
+    await cmd_challenge(message, db, bot)
+
+    message.answer.assert_awaited_once_with(render.CHALLENGE_USAGE)
+
+
+async def test_cmd_challenge_success_edits_placeholder_to_link(db, fake_vectors, monkeypatch):
+    monkeypatch.setattr(
+        "app.bot.handlers.get_settings", lambda: SimpleNamespace(data_dir=fake_vectors)
+    )
+    bot = _fake_bot()
+    message = _fake_message("/challenge кот", user_id=1)
+    message.answer.return_value = Mock(message_id=99)
+
+    await cmd_challenge(message, db, bot)
+
+    bot.edit_message_text.assert_awaited_once()
+    args, kwargs = bot.edit_message_text.await_args
+    assert "t.me/teplee_bot?start=c_" in args[0]
+    assert kwargs["chat_id"] == 1 and kwargs["message_id"] == 99
+
+
+async def test_cmd_challenge_word_not_found(db, fake_vectors, monkeypatch):
+    monkeypatch.setattr(
+        "app.bot.handlers.get_settings", lambda: SimpleNamespace(data_dir=fake_vectors)
+    )
+    bot = _fake_bot()
+    message = _fake_message("/challenge абракадабрище", user_id=1)
+    message.answer.return_value = Mock(message_id=99)
+
+    await cmd_challenge(message, db, bot)
+
+    bot.edit_message_text.assert_awaited_once_with(
+        render.CHALLENGE_WORD_NOT_FOUND, chat_id=1, message_id=99
+    )
+
+
+async def test_cmd_challenge_limit_enforced(db, fake_vectors, monkeypatch):
+    monkeypatch.setattr(
+        "app.bot.handlers.get_settings", lambda: SimpleNamespace(data_dir=fake_vectors)
+    )
+    for _ in range(challenge.MAX_ACTIVE):
+        await challenge.create(db, fake_vectors, 1, "ru", "кот")
+
+    bot = _fake_bot()
+    message = _fake_message("/challenge кот", user_id=1)
+    message.answer.return_value = Mock(message_id=5)
+
+    await cmd_challenge(message, db, bot)
+
+    bot.edit_message_text.assert_awaited_once_with(
+        render.CHALLENGE_LIMIT, chat_id=1, message_id=5
+    )

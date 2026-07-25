@@ -5,6 +5,8 @@ Code/comments in English, user-facing texts in Russian per CLAUDE.md.
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from app.services import challenge
+
 LANG_FLAG = {"ru": "🇷🇺", "en": "🇬🇧"}
 
 
@@ -16,15 +18,9 @@ def rank_emoji(rank: int) -> str:
     return "⬜"
 
 
-def render_game_message(
-    day_no: int,
-    lang: str,
-    attempts: list[dict],
-    last: dict | None,
-    solved: bool,
-) -> str:
-    """attempts are rank-sorted; last is the most recent attempt (word/rank)."""
-    lines = [f"🎯 Слово дня #{day_no} ({LANG_FLAG[lang]}) · Попыток: {len(attempts)}"]
+def _attempts_body(attempts: list[dict], last: dict | None, solved: bool) -> list[str]:
+    """Shared "последнее/Топ-5/solved-footer" body for daily and challenge messages."""
+    lines = []
     if last:
         lines += ["", f"последнее: {last['word']} — {last['rank']} {rank_emoji(last['rank'])}"]
     if attempts:
@@ -37,20 +33,65 @@ def render_game_message(
             "",
             "🏆 Слово угадано! Можно дорешивать — ранги покажу, статистика не пострадает.",
         ]
+    return lines
+
+
+def render_game_message(
+    day_no: int,
+    lang: str,
+    attempts: list[dict],
+    last: dict | None,
+    solved: bool,
+) -> str:
+    """attempts are rank-sorted; last is the most recent attempt (word/rank)."""
+    lines = [f"🎯 Слово дня #{day_no} ({LANG_FLAG[lang]}) · Попыток: {len(attempts)}"]
+    lines += _attempts_body(attempts, last, solved)
     return "\n".join(lines)
 
 
-def game_keyboard() -> InlineKeyboardMarkup:
+def render_challenge_message(
+    who: str,
+    lang: str,
+    attempts: list[dict],
+    last: dict | None,
+    solved: bool,
+) -> str:
+    """Same body as render_game_message, but headed by the challenge creator, no day number."""
+    lines = [f"⚔️ Челлендж от {who} ({LANG_FLAG[lang]}) · Попыток: {len(attempts)}"]
+    lines += _attempts_body(attempts, last, solved)
+    return "\n".join(lines)
+
+
+def game_keyboard(in_challenge: bool = False) -> InlineKeyboardMarkup:
     """No 'Открыть игру' button: Mini App is deferred to v1.5 (see ROADMAP).
 
-    Challenge and language-toggle buttons removed: challenges aren't built yet
-    (deep-link referral still shows CHALLENGE_SOON), and /lang already covers
-    language switching via the bot command menu.
+    in_challenge=True: playing someone else's challenge, so swap the "загадать
+    другу" row for a way back to the daily word. in_challenge=False (default,
+    daily play): "Загадать другу" opens a stateless how-to alert rather than a
+    dialog — Telegram gives bots no way to prefill a user's next message, so
+    the button can't do more than tell them to type /challenge <слово>.
     """
+    if in_challenge:
+        return InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="📋 Все слова", callback_data="show_all")],
+                [InlineKeyboardButton(text="💡 Подсказка", callback_data="hint")],
+                [InlineKeyboardButton(text="🌡️ К слову дня", callback_data="back_to_daily")],
+            ]
+        )
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="📋 Все слова", callback_data="show_all")],
             [InlineKeyboardButton(text="💡 Подсказка", callback_data="hint")],
+            [InlineKeyboardButton(text="🎯 Загадать другу", callback_data="challenge_howto")],
+        ]
+    )
+
+
+def challenge_win_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🎯 Загадать в ответ", callback_data="reply_challenge")]
         ]
     )
 
@@ -89,6 +130,7 @@ HELP_TEXT = (
     "Просто пиши слова в чат — ранг покажу в игровом сообщении.\n\n"
     "/lang — сменить язык слова (🇷🇺/🇬🇧)\n"
     "/stats — твоя статистика и стрик\n"
+    "/challenge <слово> — загадать слово другу\n"
     "/mute — выключить утренние напоминания\n"
     "/help — это сообщение"
 )
@@ -96,6 +138,32 @@ HELP_TEXT = (
 WORD_NOT_FOUND = "🤷 Не знаю такого слова. Попытка не потрачена!"
 MUTED = "🔕 Напоминания выключены. Вернуть: /unmute"
 UNMUTED = "🔔 Напоминания включены — жду тебя каждое утро!"
-CHALLENGE_SOON = "🎯 Челленджи уже почти готовы — появятся совсем скоро!"
 HINT_NO_ATTEMPTS = "🤷 Сначала напиши хотя бы одно слово — тогда будет от чего подсказывать!"
 HINT_SOLVED = "🏆 Уже угадано, подсказка ни к чему!"
+
+CHALLENGE_USAGE = (
+    "🎯 Загадай слово другу: напиши `/challenge <слово>`, например `/challenge космос`. "
+    "Слово должно быть существительным из словаря."
+)
+CHALLENGE_HOWTO = CHALLENGE_USAGE
+CHALLENGE_PENDING = "⏳ Готовлю челлендж…"
+CHALLENGE_WORD_NOT_FOUND = "🤷 Не знаю такого слова — попробуй другое."
+CHALLENGE_LIMIT = (
+    f"У тебя уже {challenge.MAX_ACTIVE} активных челленджей — подожди, пока кто-то из них "
+    f"истечёт (живут {challenge.TTL_DAYS} дней)."
+)
+CHALLENGE_UNAVAILABLE = "😔 Челленджи временно недоступны, попробуй позже."
+CHALLENGE_EXPIRED = "😔 Этот челлендж уже не найден — истёк или удалён."
+CHALLENGE_OWN_LINK = "😄 Это же твоя собственная ссылка!"
+
+
+def challenge_created_text(link: str) -> str:
+    return f"🎉 Готово! Отправь другу:\n{link}\n\nЯ загадал слово. Слабо угадать? 😏"
+
+
+def challenge_intro_text(who: str) -> str:
+    return f"⚔️ {who} загадал тебе слово! Пиши свои варианты 👇"
+
+
+def creator_notify_text(who: str, attempts_count: int) -> str:
+    return f"🏆 {who} угадал твоё слово за {attempts_count} попыток!"

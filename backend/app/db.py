@@ -49,6 +49,8 @@ CREATE TABLE IF NOT EXISTS challenge_rank (
   PRIMARY KEY (challenge_id, word)
 ) WITHOUT ROWID;
 
+CREATE INDEX IF NOT EXISTS idx_challenges_creator ON challenges(creator_id, expires_at);
+
 CREATE TABLE IF NOT EXISTS challenge_results (
   challenge_id TEXT NOT NULL,
   telegram_id  INTEGER NOT NULL,
