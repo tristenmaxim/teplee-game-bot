@@ -208,6 +208,7 @@ async def cmd_unmute(message: Message, db: Database) -> None:
 
 
 @router.message(Command("challenge"))
+@router.edited_message(Command("challenge"))
 async def cmd_challenge(message: Message, db: Database, bot: Bot) -> None:
     args = (message.text or "").split(maxsplit=1)
     if len(args) < 2 or not args[1].strip():
@@ -385,6 +386,7 @@ async def cmd_hint(message: Message, db: Database, bot: Bot) -> None:
 
 
 @router.message(F.text & ~F.text.startswith("/"))
+@router.edited_message(F.text & ~F.text.startswith("/"))
 async def on_guess(message: Message, db: Database, bot: Bot) -> None:
     user_id = message.from_user.id
     user = await game.get_user(db, user_id)

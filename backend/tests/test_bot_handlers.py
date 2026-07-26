@@ -5,6 +5,7 @@ even though it "worked" server-side. See update_game_message's force_new."""
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
+from aiogram import Dispatcher
 from aiogram.exceptions import TelegramForbiddenError
 
 from app.bot import render
@@ -16,6 +17,7 @@ from app.bot.handlers import (
     cmd_challenge,
     cmd_start,
     on_guess,
+    router,
     update_game_message,
 )
 from app.services import challenge, game
@@ -42,6 +44,16 @@ def _fake_callback(user_id: int = 1) -> SimpleNamespace:
         from_user=SimpleNamespace(id=user_id, username="u", first_name="Test"),
         answer=AsyncMock(),
     )
+
+
+def test_guess_and_challenge_handle_edited_messages_too():
+    # Telegram only delivers edited_message updates for event types a handler
+    # is actually registered for (aiogram computes allowed_updates from this).
+    # Without this, a tester fixing a typo by editing their message — instead
+    # of resending — silently never reaches the bot at all.
+    dispatcher = Dispatcher()
+    dispatcher.include_router(router)
+    assert "edited_message" in dispatcher.resolve_used_update_types()
 
 
 async def test_update_game_message_edits_in_place_by_default(db):
