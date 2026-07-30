@@ -253,13 +253,6 @@ async def test_challenge_create_word_not_in_dict_raises_word_not_found(db, fake_
         await challenge.create(db, fake_vectors, 1, "ru", "абракадабрище")
 
 
-async def test_challenge_create_limit_enforced(db, fake_vectors):
-    for _ in range(challenge.MAX_ACTIVE):
-        await challenge.create(db, fake_vectors, 1, "ru", "кот")
-    with pytest.raises(challenge.TooManyChallenges):
-        await challenge.create(db, fake_vectors, 1, "ru", "кот")
-
-
 async def test_challenge_get_meta_none_when_expired(db):
     await db.conn.execute(
         """INSERT INTO challenges (id, creator_id, lang, word, expires_at)

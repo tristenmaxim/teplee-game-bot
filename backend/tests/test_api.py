@@ -7,7 +7,6 @@ from app import api
 from app.auth import sign_init_data
 from app.config import get_settings
 from app.main import app
-from app.services import challenge
 from tests.conftest import BOT_TOKEN
 
 
@@ -112,13 +111,3 @@ async def test_post_challenge_word_not_found_409(client, fake_vectors, monkeypat
     )
     assert r.status_code == 409
     assert r.json()["detail"] == "word_not_found"
-
-
-async def test_post_challenge_limit_429(client, fake_vectors, monkeypatch):
-    monkeypatch.setattr(get_settings(), "data_dir", fake_vectors)
-    h = auth_headers(user_id=222)
-    for _ in range(challenge.MAX_ACTIVE):
-        await client.post("/api/challenge", json={"word": "кот"}, headers=h)
-    r = await client.post("/api/challenge", json={"word": "кот"}, headers=h)
-    assert r.status_code == 429
-    assert r.json()["detail"] == "too_many_challenges"

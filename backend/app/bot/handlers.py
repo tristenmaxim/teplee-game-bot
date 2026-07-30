@@ -135,6 +135,8 @@ async def cmd_start(message: Message, db: Database, bot: Bot) -> None:
         message.from_user.first_name,
         referred_by=referred_by,
     )
+    # /start is the documented way out of the "write me the challenge word" state.
+    await _set_awaiting_challenge(db, message.from_user.id, False)
     if referred_by:
         challenge_id = referred_by.removeprefix("c_")
         meta = await challenge.get_meta(db, challenge_id)
@@ -207,30 +209,34 @@ async def cmd_unmute(message: Message, db: Database) -> None:
     await message.answer(render.UNMUTED)
 
 
-@router.message(Command("challenge"))
-@router.edited_message(Command("challenge"))
-async def cmd_challenge(message: Message, db: Database, bot: Bot) -> None:
-    args = (message.text or "").split(maxsplit=1)
-    if len(args) < 2 or not args[1].strip():
-        await message.answer(render.CHALLENGE_USAGE)
-        return
+async def _set_awaiting_challenge(db: Database, user_id: int, value: bool) -> None:
+    """awaiting_challenge=1 makes the next plain message the challenge word."""
+    await game.ensure_user(db, user_id)
+    await db.conn.execute(
+        "UPDATE users SET awaiting_challenge = ? WHERE telegram_id = ?", (int(value), user_id)
+    )
+    await db.conn.commit()
 
+
+async def _create_challenge(bot: Bot, db: Database, message: Message, raw_word: str) -> None:
+    """Rank raw_word into a challenge and reply with the invite link.
+
+    All failures are reported by editing the "готовлю…" placeholder, so the chat
+    keeps one message per attempt instead of a growing error trail.
+    """
     user = await game.get_user(db, message.from_user.id)
-    lang = user["lang_mode"]
     pending = await message.answer(render.CHALLENGE_PENDING)
 
     try:
         challenge_id = await challenge.create(
-            db, get_settings().data_dir, message.from_user.id, lang, args[1]
+            db, get_settings().data_dir, message.from_user.id, user["lang_mode"], raw_word
         )
     except WordNotFound:
+        # Stay armed: the user's next word is another attempt at the challenge,
+        # not a guess in the daily game.
+        await _set_awaiting_challenge(db, message.from_user.id, True)
         await bot.edit_message_text(
             render.CHALLENGE_WORD_NOT_FOUND, chat_id=message.chat.id, message_id=pending.message_id
-        )
-        return
-    except challenge.TooManyChallenges:
-        await bot.edit_message_text(
-            render.CHALLENGE_LIMIT, chat_id=message.chat.id, message_id=pending.message_id
         )
         return
     except vectors.VectorsUnavailable:
@@ -244,6 +250,20 @@ async def cmd_challenge(message: Message, db: Database, bot: Bot) -> None:
     await bot.edit_message_text(
         render.challenge_created_text(link), chat_id=message.chat.id, message_id=pending.message_id
     )
+
+
+@router.message(Command("challenge"))
+@router.edited_message(Command("challenge"))
+async def cmd_challenge(message: Message, db: Database, bot: Bot) -> None:
+    args = (message.text or "").split(maxsplit=1)
+    if len(args) < 2 or not args[1].strip():
+        # Bare /challenge: ask for the word, same flow as the button.
+        await _set_awaiting_challenge(db, message.from_user.id, True)
+        await message.answer(render.CHALLENGE_ASK_WORD)
+        return
+
+    await _set_awaiting_challenge(db, message.from_user.id, False)
+    await _create_challenge(bot, db, message, args[1])
 
 
 @router.callback_query(F.data == "back_to_daily")
@@ -279,15 +299,11 @@ async def cb_back_to_challenge(callback: CallbackQuery, db: Database, bot: Bot) 
     await update_game_message(bot, db, callback.from_user.id, force_new=True)
 
 
-@router.callback_query(F.data == "challenge_howto")
-async def cb_challenge_howto(callback: CallbackQuery) -> None:
-    await callback.answer(render.CHALLENGE_HOWTO, show_alert=True)
-
-
-@router.callback_query(F.data == "reply_challenge")
-async def cb_reply_challenge(callback: CallbackQuery, bot: Bot) -> None:
+@router.callback_query(F.data.in_({"challenge_new", "reply_challenge"}))
+async def cb_challenge_new(callback: CallbackQuery, db: Database, bot: Bot) -> None:
+    await _set_awaiting_challenge(db, callback.from_user.id, True)
     await callback.answer()
-    await bot.send_message(callback.from_user.id, render.CHALLENGE_USAGE)
+    await bot.send_message(callback.from_user.id, render.CHALLENGE_ASK_WORD)
 
 
 @router.callback_query(F.data == "show_all")
@@ -390,6 +406,13 @@ async def cmd_hint(message: Message, db: Database, bot: Bot) -> None:
 async def on_guess(message: Message, db: Database, bot: Bot) -> None:
     user_id = message.from_user.id
     user = await game.get_user(db, user_id)
+
+    # Armed by "Загадать другу"/bare /challenge: this message is the secret word.
+    if user["awaiting_challenge"]:
+        await _set_awaiting_challenge(db, user_id, False)
+        await _create_challenge(bot, db, message, message.text)
+        return
+
     game_key, lang, _meta = await _resolve_game(db, user)
     try:
         result = await game.guess(db, user_id, game_key, lang, message.text)

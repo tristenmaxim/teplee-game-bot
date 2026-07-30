@@ -5,8 +5,6 @@ Code/comments in English, user-facing texts in Russian per CLAUDE.md.
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from app.services import challenge
-
 LANG_FLAG = {"ru": "🇷🇺", "en": "🇬🇧"}
 
 
@@ -69,9 +67,10 @@ def game_keyboard(
 
     in_challenge=True: playing someone else's challenge, so swap the "загадать
     другу" row for a way back to the daily word. in_challenge=False (default,
-    daily play): "Загадать другу" opens a stateless how-to alert rather than a
-    dialog — Telegram gives bots no way to prefill a user's next message, so
-    the button can't do more than tell them to type /challenge <слово>.
+    daily play): "Загадать другу" arms users.awaiting_challenge, so the next
+    plain message is read as the secret word instead of a guess — Telegram
+    gives bots no way to prefill a message, and typing "/challenge слово" by
+    hand proved awkward.
 
     has_challenge_to_return_to (ignored when in_challenge=True): the user has
     a last-played friend's challenge still valid, so add a way back into it —
@@ -88,7 +87,7 @@ def game_keyboard(
     rows = [
         [InlineKeyboardButton(text="📋 Все слова", callback_data="show_all")],
         [InlineKeyboardButton(text="💡 Подсказка", callback_data="hint")],
-        [InlineKeyboardButton(text="🎯 Загадать другу", callback_data="challenge_howto")],
+        [InlineKeyboardButton(text="🎯 Загадать другу", callback_data="challenge_new")],
     ]
     if has_challenge_to_return_to:
         rows.append(
@@ -139,7 +138,7 @@ HELP_TEXT = (
     "Просто пиши слова в чат — ранг покажу в игровом сообщении.\n\n"
     "/lang — сменить язык слова (🇷🇺/🇬🇧)\n"
     "/stats — твоя статистика и стрик\n"
-    "/challenge <слово> — загадать слово другу\n"
+    "/challenge — загадать слово другу\n"
     "/mute — выключить утренние напоминания\n"
     "/help — это сообщение"
 )
@@ -150,17 +149,12 @@ UNMUTED = "🔔 Напоминания включены — жду тебя ка
 HINT_NO_ATTEMPTS = "🤷 Сначала напиши хотя бы одно слово — тогда будет от чего подсказывать!"
 HINT_SOLVED = "🏆 Уже угадано, подсказка ни к чему!"
 
-CHALLENGE_USAGE = (
-    "🎯 Загадай слово другу: напиши `/challenge <слово>`, например `/challenge космос`. "
-    "Слово должно быть существительным из словаря."
+CHALLENGE_ASK_WORD = (
+    "🎯 Напиши слово, которое загадаешь другу — следующим сообщением.\n\n"
+    "Нужно существительное из словаря. Передумал? Жми /start — вернёмся к игре."
 )
-CHALLENGE_HOWTO = CHALLENGE_USAGE
 CHALLENGE_PENDING = "⏳ Готовлю челлендж…"
 CHALLENGE_WORD_NOT_FOUND = "🤷 Не знаю такого слова — попробуй другое."
-CHALLENGE_LIMIT = (
-    f"У тебя уже {challenge.MAX_ACTIVE} активных челленджей — подожди, пока кто-то из них "
-    f"истечёт (живут {challenge.TTL_DAYS} дней)."
-)
 CHALLENGE_UNAVAILABLE = "😔 Челленджи временно недоступны, попробуй позже."
 CHALLENGE_EXPIRED = "😔 Этот челлендж уже не найден — истёк или удалён."
 CHALLENGE_OWN_LINK = "😄 Это же твоя собственная ссылка!"

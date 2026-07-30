@@ -12,6 +12,7 @@ from app.bot import render
 from app.bot.handlers import (
     cb_back_to_challenge,
     cb_back_to_daily,
+    cb_challenge_new,
     cb_hint,
     cb_show_all,
     cmd_challenge,
@@ -382,13 +383,53 @@ async def test_cb_back_to_daily_clears_active_game(db):
     assert (await game.get_user(db, 1))["active_game"] is None
 
 
-async def test_cmd_challenge_no_args_shows_usage(db):
+async def test_cmd_challenge_no_args_asks_for_word_and_arms(db):
     bot = _fake_bot()
     message = _fake_message("/challenge", user_id=1)
 
     await cmd_challenge(message, db, bot)
 
-    message.answer.assert_awaited_once_with(render.CHALLENGE_USAGE)
+    message.answer.assert_awaited_once_with(render.CHALLENGE_ASK_WORD)
+    assert (await game.get_user(db, 1))["awaiting_challenge"] == 1
+
+
+async def test_challenge_button_arms_next_message_as_the_word(db, fake_vectors, monkeypatch):
+    monkeypatch.setattr(
+        "app.bot.handlers.get_settings", lambda: SimpleNamespace(data_dir=fake_vectors)
+    )
+    bot = _fake_bot()
+    callback = _fake_callback(user_id=1)
+
+    await cb_challenge_new(callback, db, bot)
+    assert (await game.get_user(db, 1))["awaiting_challenge"] == 1
+
+    message = _fake_message("кот", user_id=1)
+    message.answer.return_value = Mock(message_id=7)
+    await on_guess(message, db, bot)
+
+    args, _kwargs = bot.edit_message_text.await_args
+    assert "t.me/teplee_bot?start=c_" in args[0]
+    # Disarmed, so the next word is a guess again.
+    assert (await game.get_user(db, 1))["awaiting_challenge"] == 0
+    assert (await game.state(db, 1, game.daily_game_key("ru"), "ru"))["attempts"] == []
+
+
+async def test_challenge_word_not_found_stays_armed(db, fake_vectors, monkeypatch):
+    monkeypatch.setattr(
+        "app.bot.handlers.get_settings", lambda: SimpleNamespace(data_dir=fake_vectors)
+    )
+    bot = _fake_bot()
+    callback = _fake_callback(user_id=1)
+    await cb_challenge_new(callback, db, bot)
+
+    message = _fake_message("абракадабрище", user_id=1)
+    message.answer.return_value = Mock(message_id=7)
+    await on_guess(message, db, bot)
+
+    bot.edit_message_text.assert_awaited_once_with(
+        render.CHALLENGE_WORD_NOT_FOUND, chat_id=1, message_id=7
+    )
+    assert (await game.get_user(db, 1))["awaiting_challenge"] == 1
 
 
 async def test_cmd_challenge_success_edits_placeholder_to_link(db, fake_vectors, monkeypatch):
@@ -422,11 +463,11 @@ async def test_cmd_challenge_word_not_found(db, fake_vectors, monkeypatch):
     )
 
 
-async def test_cmd_challenge_limit_enforced(db, fake_vectors, monkeypatch):
+async def test_cmd_challenge_no_limit(db, fake_vectors, monkeypatch):
     monkeypatch.setattr(
         "app.bot.handlers.get_settings", lambda: SimpleNamespace(data_dir=fake_vectors)
     )
-    for _ in range(challenge.MAX_ACTIVE):
+    for _ in range(6):
         await challenge.create(db, fake_vectors, 1, "ru", "кот")
 
     bot = _fake_bot()
@@ -435,9 +476,8 @@ async def test_cmd_challenge_limit_enforced(db, fake_vectors, monkeypatch):
 
     await cmd_challenge(message, db, bot)
 
-    bot.edit_message_text.assert_awaited_once_with(
-        render.CHALLENGE_LIMIT, chat_id=1, message_id=5
-    )
+    args, _kwargs = bot.edit_message_text.await_args
+    assert "t.me/teplee_bot?start=c_" in args[0]
 
 
 # --- last_challenge_id: "back to challenge" from daily (Fix 4) ---

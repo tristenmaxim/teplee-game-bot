@@ -14,31 +14,17 @@ from app.services import vectors
 from app.services.game import WordNotFound
 from app.services.lemmatize import lookup_candidates
 
-MAX_ACTIVE = 5  # PRD §4: max active (non-expired) challenges per creator
 TTL_DAYS = 7  # PRD §4: challenge lifetime
 
 _ID_RETRIES = 3
 
 
-class TooManyChallenges(Exception):
-    """Creator already has MAX_ACTIVE non-expired challenges."""
-
-
 async def create(db: Database, data_dir: str, creator_id: int, lang: str, raw_word: str) -> str:
     """Rank raw_word, create the challenge row + its full challenge_rank table.
 
-    Raises TooManyChallenges if the creator is at MAX_ACTIVE, WordNotFound if
-    raw_word isn't in the guess dictionary. VectorsUnavailable propagates
-    uncaught for the caller to handle.
+    Raises WordNotFound if raw_word isn't in the guess dictionary.
+    VectorsUnavailable propagates uncaught for the caller to handle.
     """
-    cur = await db.conn.execute(
-        """SELECT COUNT(*) AS n FROM challenges
-           WHERE creator_id = ? AND expires_at > datetime('now')""",
-        (creator_id,),
-    )
-    if (await cur.fetchone())["n"] >= MAX_ACTIVE:
-        raise TooManyChallenges(creator_id)
-
     ranking = None
     word = None
     for candidate in lookup_candidates(raw_word, lang):

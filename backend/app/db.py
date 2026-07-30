@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS users (
   last_win_day INTEGER,
   referred_by  TEXT,
   last_challenge_id TEXT,
+  awaiting_challenge INTEGER NOT NULL DEFAULT 0,
   created_at   TEXT DEFAULT (datetime('now'))
 );
 
@@ -100,6 +101,9 @@ class Database:
         await conn.executescript(MIGRATIONS)
         await _add_column_if_missing(conn, "attempts", "via_hint", "INTEGER NOT NULL DEFAULT 0")
         await _add_column_if_missing(conn, "users", "last_challenge_id", "TEXT")
+        await _add_column_if_missing(
+            conn, "users", "awaiting_challenge", "INTEGER NOT NULL DEFAULT 0"
+        )
         await conn.commit()
         return cls(conn)
 

@@ -179,8 +179,6 @@ async def post_challenge(
         )
     except WordNotFound:
         raise HTTPException(409, "word_not_found") from None
-    except challenge.TooManyChallenges:
-        raise HTTPException(429, "too_many_challenges") from None
     except vectors.VectorsUnavailable:
         raise HTTPException(503, "challenges_unavailable") from None
     return {
