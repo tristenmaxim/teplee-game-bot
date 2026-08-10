@@ -8,20 +8,20 @@ from unittest.mock import AsyncMock, Mock
 from aiogram import Dispatcher
 from aiogram.exceptions import TelegramForbiddenError
 
-from app.bot import render
 from app.bot.handlers import (
     cb_back_to_challenge,
     cb_back_to_daily,
     cb_challenge_new,
     cb_hint,
     cb_show_all,
+    cmd_admin,
     cmd_challenge,
     cmd_start,
     on_guess,
     router,
     update_game_message,
 )
-from app.services import challenge, game
+from app.services import challenge, game, texts
 
 
 def _fake_bot(next_message_id: int = 100) -> AsyncMock:
@@ -222,7 +222,7 @@ async def test_cb_hint_no_attempts_shows_alert_without_touching_game_message(db,
 
     await cb_hint(callback, db, bot)
 
-    callback.answer.assert_awaited_once_with(render.HINT_NO_ATTEMPTS, show_alert=True)
+    callback.answer.assert_awaited_once_with(texts.get("hint_no_attempts"), show_alert=True)
     bot.send_message.assert_not_called()
     bot.edit_message_text.assert_not_called()
 
@@ -254,7 +254,7 @@ async def test_cmd_start_own_challenge_link_blocked(db, fake_vectors):
     await cmd_start(message, db, bot)
 
     assert (await game.get_user(db, 1))["active_game"] is None
-    assert message.answer.await_args_list[0].args[0] == render.CHALLENGE_OWN_LINK
+    assert message.answer.await_args_list[0].args[0] == texts.get("challenge_own_link")
 
 
 async def test_cmd_start_expired_challenge_link(db):
@@ -264,7 +264,7 @@ async def test_cmd_start_expired_challenge_link(db):
     await cmd_start(message, db, bot)
 
     assert (await game.get_user(db, 1))["active_game"] is None
-    assert message.answer.await_args_list[0].args[0] == render.CHALLENGE_EXPIRED
+    assert message.answer.await_args_list[0].args[0] == texts.get("challenge_expired")
 
 
 async def test_cmd_start_bare_resets_active_game_to_daily(db):
@@ -389,7 +389,7 @@ async def test_cmd_challenge_no_args_asks_for_word_and_arms(db):
 
     await cmd_challenge(message, db, bot)
 
-    message.answer.assert_awaited_once_with(render.CHALLENGE_ASK_WORD)
+    message.answer.assert_awaited_once_with(texts.get("challenge_ask_word"))
     assert (await game.get_user(db, 1))["awaiting_challenge"] == 1
 
 
@@ -427,7 +427,7 @@ async def test_challenge_word_not_found_stays_armed(db, fake_vectors, monkeypatc
     await on_guess(message, db, bot)
 
     bot.edit_message_text.assert_awaited_once_with(
-        render.CHALLENGE_WORD_NOT_FOUND, chat_id=1, message_id=7
+        texts.get("challenge_word_not_found"), chat_id=1, message_id=7
     )
     assert (await game.get_user(db, 1))["awaiting_challenge"] == 1
 
@@ -459,7 +459,7 @@ async def test_cmd_challenge_word_not_found(db, fake_vectors, monkeypatch):
     await cmd_challenge(message, db, bot)
 
     bot.edit_message_text.assert_awaited_once_with(
-        render.CHALLENGE_WORD_NOT_FOUND, chat_id=1, message_id=99
+        texts.get("challenge_word_not_found"), chat_id=1, message_id=99
     )
 
 
@@ -584,7 +584,25 @@ async def test_cb_back_to_challenge_expired_shows_alert_and_self_heals(db):
 
     await cb_back_to_challenge(callback, db, bot)
 
-    callback.answer.assert_awaited_once_with(render.CHALLENGE_EXPIRED, show_alert=True)
+    callback.answer.assert_awaited_once_with(texts.get("challenge_expired"), show_alert=True)
     bot.send_message.assert_not_called()
     assert (await game.get_user(db, 1))["active_game"] is None
     assert (await game.get_user(db, 1))["last_challenge_id"] is None
+
+
+async def test_cmd_admin_sends_login_link_for_admin():
+    message = _fake_message("/admin", user_id=42)  # 42 is in ADMIN_IDS (conftest env)
+
+    await cmd_admin(message)
+
+    message.answer.assert_awaited_once()
+    sent = message.answer.await_args.args[0]
+    assert "/admin/auth/token?token=" in sent
+
+
+async def test_cmd_admin_silent_for_non_admin():
+    message = _fake_message("/admin", user_id=999)
+
+    await cmd_admin(message)
+
+    message.answer.assert_not_called()

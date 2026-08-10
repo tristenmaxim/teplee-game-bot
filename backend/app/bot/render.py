@@ -1,9 +1,13 @@
 """Game-message rendering: one editable message per user (PRD §5A).
 
 Code/comments in English, user-facing texts in Russian per CLAUDE.md.
+User-facing strings live in app.services.texts (DB-editable via admin UI),
+not as literals here — this module only assembles them.
 """
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+from app.services import texts
 
 LANG_FLAG = {"ru": "🇷🇺", "en": "🇬🇧"}
 
@@ -20,17 +24,20 @@ def _attempts_body(attempts: list[dict], last: dict | None, solved: bool) -> lis
     """Shared "последнее/Топ-5/solved-footer" body for daily and challenge messages."""
     lines = []
     if last:
-        lines += ["", f"последнее: {last['word']} — {last['rank']} {rank_emoji(last['rank'])}"]
-    if attempts:
-        lines += ["", "Топ-5:"]
-        lines += [f"{rank_emoji(a['rank'])} {a['rank']} · {a['word']}" for a in attempts[:5]]
-    else:
-        lines += ["", "Пиши слова — я скажу, насколько ты близко 🌡️"]
-    if solved:
         lines += [
             "",
-            "🏆 Слово угадано! Можно дорешивать — ранги покажу, статистика не пострадает.",
+            texts.get(
+                "attempts_last_line", word=last["word"], rank=last["rank"],
+                emoji=rank_emoji(last["rank"]),
+            ),
         ]
+    if attempts:
+        lines += ["", texts.get("attempts_top5_label")]
+        lines += [f"{rank_emoji(a['rank'])} {a['rank']} · {a['word']}" for a in attempts[:5]]
+    else:
+        lines += ["", texts.get("attempts_empty")]
+    if solved:
+        lines += ["", texts.get("solved_footer")]
     return lines
 
 
@@ -42,7 +49,9 @@ def render_game_message(
     solved: bool,
 ) -> str:
     """attempts are rank-sorted; last is the most recent attempt (word/rank)."""
-    lines = [f"🎯 Слово дня #{day_no} ({LANG_FLAG[lang]}) · Попыток: {len(attempts)}"]
+    lines = [
+        texts.get("game_message_header", day_no=day_no, flag=LANG_FLAG[lang], count=len(attempts))
+    ]
     lines += _attempts_body(attempts, last, solved)
     return "\n".join(lines)
 
@@ -55,7 +64,11 @@ def render_challenge_message(
     solved: bool,
 ) -> str:
     """Same body as render_game_message, but headed by the challenge creator, no day number."""
-    lines = [f"⚔️ Челлендж от {who} ({LANG_FLAG[lang]}) · Попыток: {len(attempts)}"]
+    lines = [
+        texts.get(
+            "challenge_message_header", who=who, flag=LANG_FLAG[lang], count=len(attempts)
+        )
+    ]
     lines += _attempts_body(attempts, last, solved)
     return "\n".join(lines)
 
@@ -79,19 +92,27 @@ def game_keyboard(
     if in_challenge:
         return InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="📋 Все слова", callback_data="show_all")],
-                [InlineKeyboardButton(text="💡 Подсказка", callback_data="hint")],
-                [InlineKeyboardButton(text="🌡️ К слову дня", callback_data="back_to_daily")],
+                [InlineKeyboardButton(text=texts.get("btn_show_all"), callback_data="show_all")],
+                [InlineKeyboardButton(text=texts.get("btn_hint"), callback_data="hint")],
+                [
+                    InlineKeyboardButton(
+                        text=texts.get("btn_back_to_daily"), callback_data="back_to_daily"
+                    )
+                ],
             ]
         )
     rows = [
-        [InlineKeyboardButton(text="📋 Все слова", callback_data="show_all")],
-        [InlineKeyboardButton(text="💡 Подсказка", callback_data="hint")],
-        [InlineKeyboardButton(text="🎯 Загадать другу", callback_data="challenge_new")],
+        [InlineKeyboardButton(text=texts.get("btn_show_all"), callback_data="show_all")],
+        [InlineKeyboardButton(text=texts.get("btn_hint"), callback_data="hint")],
+        [InlineKeyboardButton(text=texts.get("btn_challenge_new"), callback_data="challenge_new")],
     ]
     if has_challenge_to_return_to:
         rows.append(
-            [InlineKeyboardButton(text="⚔️ К челленджу", callback_data="back_to_challenge")]
+            [
+                InlineKeyboardButton(
+                    text=texts.get("btn_back_to_challenge"), callback_data="back_to_challenge"
+                )
+            ]
         )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -99,18 +120,22 @@ def game_keyboard(
 def challenge_win_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🎯 Загадать в ответ", callback_data="reply_challenge")]
+            [
+                InlineKeyboardButton(
+                    text=texts.get("btn_reply_challenge"), callback_data="reply_challenge"
+                )
+            ]
         ]
     )
 
 
 def render_full_list(attempts: list[dict], lang: str) -> str:
     """Full rank-sorted attempts list, unlike render_game_message's top-5 preview."""
-    lines = [f"📋 Все слова ({LANG_FLAG[lang]}) · Попыток: {len(attempts)}"]
+    lines = [texts.get("full_list_header", flag=LANG_FLAG[lang], count=len(attempts))]
     if attempts:
         lines += ["", *[f"{rank_emoji(a['rank'])} {a['rank']} · {a['word']}" for a in attempts]]
     else:
-        lines += ["", "Пока ни одного слова — начни угадывать 🌡️"]
+        lines += ["", texts.get("full_list_empty")]
     return "\n".join(lines)
 
 
@@ -119,54 +144,24 @@ def share_text(day_no: int, lang: str, attempts: list[dict], streak: int, bot_us
     yellows = sum(1 for a in attempts if 100 < a["rank"] <= 1000)
     whites = len(attempts) - greens - yellows
     boxes = "🟩" * min(greens, 3) + "🟨" * min(yellows, 3) + "⬜" * min(whites, 3)
-    return (
-        f"Теплее! #{day_no} {LANG_FLAG[lang]} | Попыток: {len(attempts)} | "
-        f"{boxes} | Стрик: {streak}🔥 | t.me/{bot_username}"
+    return texts.get(
+        "share_text",
+        day_no=day_no,
+        flag=LANG_FLAG[lang],
+        count=len(attempts),
+        boxes=boxes,
+        streak=streak,
+        bot_username=bot_username,
     )
 
 
-ONBOARDING = [
-    "Привет! Это «Теплее!» 🌡️\n\nКаждый день я загадываю слово. Пиши свои варианты — "
-    "я скажу ранг: насколько твоё слово близко по смыслу.\n\n"
-    "🟩 1–100 — очень горячо\n🟨 101–1000 — тепло\n⬜ дальше — холодно",
-    "Ранг 1 — победа 🏆\nФорма слова не важна: «котами» = «кот». "
-    "Повтор слова попытку не тратит.\n\nПоехали! Напиши первое слово 👇",
-]
-
-HELP_TEXT = (
-    "🌡️ «Теплее!» — угадай слово дня по смысловой близости.\n\n"
-    "Просто пиши слова в чат — ранг покажу в игровом сообщении.\n\n"
-    "/lang — сменить язык слова (🇷🇺/🇬🇧)\n"
-    "/stats — твоя статистика и стрик\n"
-    "/challenge — загадать слово другу\n"
-    "/mute — выключить утренние напоминания\n"
-    "/help — это сообщение"
-)
-
-WORD_NOT_FOUND = "🤷 Не знаю такого слова. Попытка не потрачена!"
-MUTED = "🔕 Напоминания выключены. Вернуть: /unmute"
-UNMUTED = "🔔 Напоминания включены — жду тебя каждое утро!"
-HINT_NO_ATTEMPTS = "🤷 Сначала напиши хотя бы одно слово — тогда будет от чего подсказывать!"
-HINT_SOLVED = "🏆 Уже угадано, подсказка ни к чему!"
-
-CHALLENGE_ASK_WORD = (
-    "🎯 Напиши слово, которое загадаешь другу — следующим сообщением.\n\n"
-    "Нужно существительное из словаря. Передумал? Жми /start — вернёмся к игре."
-)
-CHALLENGE_PENDING = "⏳ Готовлю челлендж…"
-CHALLENGE_WORD_NOT_FOUND = "🤷 Не знаю такого слова — попробуй другое."
-CHALLENGE_UNAVAILABLE = "😔 Челленджи временно недоступны, попробуй позже."
-CHALLENGE_EXPIRED = "😔 Этот челлендж уже не найден — истёк или удалён."
-CHALLENGE_OWN_LINK = "😄 Это же твоя собственная ссылка!"
-
-
 def challenge_created_text(link: str) -> str:
-    return f"🎉 Готово! Отправь другу:\n{link}\n\nЯ загадал слово. Слабо угадать? 😏"
+    return texts.get("challenge_created", link=link)
 
 
 def challenge_intro_text(who: str) -> str:
-    return f"⚔️ {who} загадал тебе слово! Пиши свои варианты 👇"
+    return texts.get("challenge_intro", who=who)
 
 
 def creator_notify_text(who: str, attempts_count: int) -> str:
-    return f"🏆 {who} угадал твоё слово за {attempts_count} попыток!"
+    return texts.get("creator_notify", who=who, attempts_count=attempts_count)

@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Теплее! — тексты бота</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    margin: 0; background: #f5f5f7; color: #1c1c1e;
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 24px; background: #fff; border-bottom: 1px solid #e5e5ea;
+    position: sticky; top: 0; z-index: 1;
+  }
+  header h1 { font-size: 18px; margin: 0; }
+  header a { color: #666; font-size: 14px; text-decoration: none; }
+  main { max-width: 780px; margin: 0 auto; padding: 24px; }
+  .search {
+    width: 100%; padding: 10px 14px; margin-bottom: 16px; font-size: 14px;
+    border: 1px solid #d1d1d6; border-radius: 10px; background: #fff;
+  }
+  .item {
+    background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 12px;
+    border: 1px solid #e5e5ea;
+  }
+  .item.overridden { border-color: #ff9500; }
+  .item-head {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+    margin-bottom: 8px;
+  }
+  .label { font-weight: 600; font-size: 14px; }
+  .key { color: #999; font-size: 11px; font-family: ui-monospace, monospace; }
+  textarea {
+    width: 100%; min-height: 64px; font-size: 14px; padding: 10px;
+    border: 1px solid #d1d1d6; border-radius: 8px; resize: vertical;
+    font-family: inherit; line-height: 1.4;
+  }
+  .vars { font-size: 11px; color: #888; margin-top: 6px; font-family: ui-monospace, monospace; }
+  .row { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
+  button {
+    font-size: 13px; padding: 7px 14px; border-radius: 8px; border: none;
+    cursor: pointer; font-weight: 500;
+  }
+  .save { background: #007aff; color: #fff; }
+  .save:disabled { background: #c7c7cc; cursor: default; }
+  .reset { background: #f2f2f7; color: #ff3b30; }
+  .status { font-size: 12px; color: #34c759; }
+  .error { font-size: 12px; color: #ff3b30; }
+  .badge {
+    font-size: 10px; color: #ff9500; border: 1px solid #ff9500; border-radius: 6px;
+    padding: 1px 6px;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>🌡️ Тексты бота</h1>
+  <a href="/admin/logout">Выйти</a>
+</header>
+<main>
+  <input class="search" id="search" placeholder="Поиск по ключу или тексту…">
+  <div id="list">Загрузка…</div>
+</main>
+<script>
+let allTexts = [];
+
+async function load() {
+  const res = await fetch("/admin/api/texts");
+  if (res.status === 401) { location.href = "/admin/login"; return; }
+  allTexts = await res.json();
+  render();
+}
+
+function render() {
+  const q = document.getElementById("search").value.trim().toLowerCase();
+  const list = document.getElementById("list");
+  const items = allTexts.filter(t =>
+    !q || t.key.includes(q) || t.label.toLowerCase().includes(q) || t.value.toLowerCase().includes(q)
+  );
+  list.innerHTML = "";
+  for (const t of items) {
+    const el = document.createElement("div");
+    el.className = "item" + (t.is_overridden ? " overridden" : "");
+    el.innerHTML = `
+      <div class="item-head">
+        <div>
+          <div class="label">${escapeHtml(t.label)} ${t.is_overridden ? '<span class="badge">изменено</span>' : ''}</div>
+          <div class="key">${escapeHtml(t.key)}</div>
+        </div>
+      </div>
+      <textarea data-key="${escapeHtml(t.key)}">${escapeHtml(t.value)}</textarea>
+      ${t.vars.length ? `<div class="vars">переменные: ${t.vars.map(v => '{' + v + '}').join(', ')}</div>` : ''}
+      <div class="row">
+        <button class="save" disabled>Сохранить</button>
+        <button class="reset">Сбросить к дефолту</button>
+        <span class="msg"></span>
+      </div>
+    `;
+    const textarea = el.querySelector("textarea");
+    const saveBtn = el.querySelector(".save");
+    const resetBtn = el.querySelector(".reset");
+    const msg = el.querySelector(".msg");
+
+    textarea.addEventListener("input", () => {
+      saveBtn.disabled = textarea.value === t.value;
+      msg.textContent = "";
+    });
+
+    saveBtn.addEventListener("click", async () => {
+      msg.className = "msg";
+      msg.textContent = "";
+      const res = await fetch(`/admin/api/texts/${encodeURIComponent(t.key)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: textarea.value }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        msg.className = "error";
+        msg.textContent = body.detail || "Ошибка сохранения";
+        return;
+      }
+      t.value = textarea.value;
+      t.is_overridden = t.value !== t.default;
+      saveBtn.disabled = true;
+      msg.className = "status";
+      msg.textContent = "Сохранено";
+      el.classList.toggle("overridden", t.is_overridden);
+    });
+
+    resetBtn.addEventListener("click", async () => {
+      const res = await fetch(`/admin/api/texts/${encodeURIComponent(t.key)}/reset`, { method: "POST" });
+      if (!res.ok) return;
+      const body = await res.json();
+      t.value = body.value;
+      t.is_overridden = false;
+      textarea.value = body.value;
+      saveBtn.disabled = true;
+      msg.className = "status";
+      msg.textContent = "Сброшено";
+      el.classList.remove("overridden");
+    });
+
+    list.appendChild(el);
+  }
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+document.getElementById("search").addEventListener("input", render);
+load();
+</script>
+</body>
+</html>

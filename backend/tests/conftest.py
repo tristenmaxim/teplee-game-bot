@@ -4,6 +4,8 @@ import os
 BOT_TOKEN = "12345:TEST_TOKEN"
 os.environ.setdefault("BOT_TOKEN", BOT_TOKEN)
 os.environ.setdefault("BOT_USERNAME", "teplee_bot")
+os.environ.setdefault("ADMIN_IDS", "42")
+os.environ.setdefault("ADMIN_SESSION_SECRET", "test-admin-secret")
 
 import aiosqlite  # noqa: E402
 import numpy as np  # noqa: E402

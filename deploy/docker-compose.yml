@@ -6,6 +6,7 @@ services:
     env_file: .env
     ports:
       - "127.0.0.1:8000:8000"  # loopback only — local healthcheck.sh, not public
+      - "8500:8000"  # public — /admin text editor (see docs/DEPLOY.md)
     volumes:
       - ./data:/data
     mem_limit: 300m

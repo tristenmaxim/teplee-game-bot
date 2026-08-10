@@ -16,9 +16,10 @@ class Settings(BaseSettings):
     static_db_path: str = "data/game_static.db"
     data_dir: str = "data"  # en_forms.json, vectors (Этап 5)
     bot_username: str = ""  # env BOT_USERNAME, for building t.me/<bot>?start=... challenge links
-    admin_id: int = 0
     init_data_max_age_s: int = 24 * 3600
     rate_limit_guess_per_s: float = 5.0
+    admin_ids: str = ""  # env ADMIN_IDS, comma-separated Telegram user ids allowed into /admin
+    admin_session_secret: str = ""  # env ADMIN_SESSION_SECRET; falls back to bot_token if unset
 
 
 @lru_cache(maxsize=1)

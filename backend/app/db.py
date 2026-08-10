@@ -61,6 +61,12 @@ CREATE TABLE IF NOT EXISTS challenge_results (
   won_at       TEXT DEFAULT (datetime('now')),
   PRIMARY KEY (challenge_id, telegram_id)
 );
+
+CREATE TABLE IF NOT EXISTS bot_texts (
+  key        TEXT PRIMARY KEY,
+  value      TEXT NOT NULL,
+  updated_at TEXT DEFAULT (datetime('now'))
+);
 """
 
 
