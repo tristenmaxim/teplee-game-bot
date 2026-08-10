@@ -64,7 +64,9 @@ async def _game_view(
     s = await game.state(db, user_id, game_key, lang)
 
     if challenge_meta is None:
-        text = render.render_game_message(s["day_no"], lang, s["attempts"], last, s["solved"])
+        text = render.render_game_message(
+            s["day_no"], lang, s["attempts"], last, s["solved"], s["hints_used"]
+        )
         has_challenge_to_return_to = False
         last_challenge_id = user["last_challenge_id"]
         if last_challenge_id:
@@ -82,7 +84,9 @@ async def _game_view(
     else:
         creator = await game.get_user(db, challenge_meta["creator_id"])
         who = _display_name(creator)
-        text = render.render_challenge_message(who, lang, s["attempts"], last, s["solved"])
+        text = render.render_challenge_message(
+            who, lang, s["attempts"], last, s["solved"], s["hints_used"]
+        )
         keyboard = render.game_keyboard(in_challenge=True)
     return text, keyboard
 
@@ -332,7 +336,7 @@ async def cb_show_all(callback: CallbackQuery, db: Database, bot: Bot) -> None:
     game_key, lang, _meta = await _resolve_game(db, user)
     s = await game.state(db, user_id, game_key, lang)
     await callback.answer()
-    await bot.send_message(user_id, render.render_full_list(s["attempts"], lang))
+    await bot.send_message(user_id, render.render_full_list(s["attempts"], lang, s["hints_used"]))
 
 
 async def _handle_win(

@@ -9,7 +9,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from app.services import texts
 
-LANG_FLAG = {"ru": "🇷🇺", "en": "🇬🇧"}
+LANG_FLAG = {"ru": "🇷🇺", "en": "🇺🇸"}
 
 
 def rank_emoji(rank: int) -> str:
@@ -47,10 +47,17 @@ def render_game_message(
     attempts: list[dict],
     last: dict | None,
     solved: bool,
+    hints_used: int,
 ) -> str:
     """attempts are rank-sorted; last is the most recent attempt (word/rank)."""
     lines = [
-        texts.get("game_message_header", day_no=day_no, flag=LANG_FLAG[lang], count=len(attempts))
+        texts.get(
+            "game_message_header",
+            day_no=day_no,
+            flag=LANG_FLAG[lang],
+            count=len(attempts),
+            hints=hints_used,
+        )
     ]
     lines += _attempts_body(attempts, last, solved)
     return "\n".join(lines)
@@ -62,11 +69,16 @@ def render_challenge_message(
     attempts: list[dict],
     last: dict | None,
     solved: bool,
+    hints_used: int,
 ) -> str:
     """Same body as render_game_message, but headed by the challenge creator, no day number."""
     lines = [
         texts.get(
-            "challenge_message_header", who=who, flag=LANG_FLAG[lang], count=len(attempts)
+            "challenge_message_header",
+            who=who,
+            flag=LANG_FLAG[lang],
+            count=len(attempts),
+            hints=hints_used,
         )
     ]
     lines += _attempts_body(attempts, last, solved)
@@ -129,9 +141,13 @@ def challenge_win_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def render_full_list(attempts: list[dict], lang: str) -> str:
+def render_full_list(attempts: list[dict], lang: str, hints_used: int) -> str:
     """Full rank-sorted attempts list, unlike render_game_message's top-5 preview."""
-    lines = [texts.get("full_list_header", flag=LANG_FLAG[lang], count=len(attempts))]
+    lines = [
+        texts.get(
+            "full_list_header", flag=LANG_FLAG[lang], count=len(attempts), hints=hints_used
+        )
+    ]
     if attempts:
         lines += ["", *[f"{rank_emoji(a['rank'])} {a['rank']} · {a['word']}" for a in attempts]]
     else:

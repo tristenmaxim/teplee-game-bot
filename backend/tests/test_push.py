@@ -21,7 +21,7 @@ def test_push_text_with_yesterday():
 
 def test_push_text_no_yesterday():
     text = _push_text(0, "en", None)
-    assert text == "🌅 Слово дня #0 🇬🇧 уже ждёт!"
+    assert text == "🌅 Слово дня #0 🇺🇸 уже ждёт!"
 
 
 async def test_send_daily_push_happy_path(db):

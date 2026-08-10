@@ -229,11 +229,18 @@ async def state(db: Database, telegram_id: int, game_key: str, lang: str) -> dic
         (telegram_id, game_key),
     )
     attempts = [{"word": r["word"], "rank": r["rank"]} for r in await cur.fetchall()]
+    cur = await db.conn.execute(
+        "SELECT COUNT(*) AS n FROM attempts WHERE telegram_id = ? AND game_key = ? "
+        "AND via_hint = 1",
+        (telegram_id, game_key),
+    )
+    hints_used = (await cur.fetchone())["n"]
     payload: dict = {
         "game_key": game_key,
         "lang": lang,
         "attempts": attempts,
         "attempts_count": len(attempts),
+        "hints_used": hints_used,
         "solved": any(a["rank"] == 1 for a in attempts),
         "streak": user["streak"],
     }

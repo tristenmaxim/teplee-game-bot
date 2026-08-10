@@ -22,7 +22,7 @@ DEFAULTS: dict[str, str] = {
     "help": (
         "🌡️ «Теплее!» — угадай слово дня по смысловой близости.\n\n"
         "Просто пиши слова в чат — ранг покажу в игровом сообщении.\n\n"
-        "/lang — сменить язык слова (🇷🇺/🇬🇧)\n"
+        "/lang — сменить язык слова (🇷🇺/🇺🇸)\n"
         "/stats — твоя статистика и стрик\n"
         "/challenge — загадать слово другу\n"
         "/mute — выключить утренние напоминания\n"
@@ -45,13 +45,17 @@ DEFAULTS: dict[str, str] = {
     "challenge_created": "🎉 Готово! Отправь другу:\n{link}\n\nЯ загадал слово. Слабо угадать? 😏",
     "challenge_intro": "⚔️ {who} загадал тебе слово! Пиши свои варианты 👇",
     "creator_notify": "🏆 {who} угадал твоё слово за {attempts_count} попыток!",
-    "game_message_header": "🎯 Слово дня #{day_no} ({flag}) · Попыток: {count}",
-    "challenge_message_header": "⚔️ Челлендж от {who} ({flag}) · Попыток: {count}",
+    "game_message_header": (
+        "🎯 Слово дня #{day_no} ({flag}) · Попыток: {count} · Подсказок: {hints}"
+    ),
+    "challenge_message_header": (
+        "⚔️ Челлендж от {who} ({flag}) · Попыток: {count} · Подсказок: {hints}"
+    ),
     "attempts_last_line": "последнее: {word} — {rank} {emoji}",
     "attempts_top5_label": "Топ-5:",
     "attempts_empty": "Пиши слова — я скажу, насколько ты близко 🌡️",
     "solved_footer": "🏆 Слово угадано! Можно дорешивать — ранги покажу, статистика не пострадает.",
-    "full_list_header": "📋 Все слова ({flag}) · Попыток: {count}",
+    "full_list_header": "📋 Все слова ({flag}) · Попыток: {count} · Подсказок: {hints}",
     "full_list_empty": "Пока ни одного слова — начни угадывать 🌡️",
     "share_text": (
         "Теплее! #{day_no} {flag} | Попыток: {count} | {boxes} | "
@@ -119,6 +123,16 @@ LABELS: dict[str, str] = {
 
 _cache: dict[str, str] = {}
 
+# Superseded default values, keyed by text key. On startup, any row still holding
+# one of these gets bumped to the current DEFAULTS value — it was never edited by
+# an admin, just stale from before the default changed. Rows that don't match (i.e.
+# admin-edited) are left untouched.
+_STALE_DEFAULTS: dict[str, set[str]] = {
+    "game_message_header": {"🎯 Слово дня #{day_no} ({flag}) · Попыток: {count}"},
+    "challenge_message_header": {"⚔️ Челлендж от {who} ({flag}) · Попыток: {count}"},
+    "full_list_header": {"📋 Все слова ({flag}) · Попыток: {count}"},
+}
+
 
 def _placeholders(template: str) -> set[str]:
     return {name for _, name, _, _ in string.Formatter().parse(template) if name}
@@ -134,6 +148,10 @@ async def init_cache(db: Database) -> None:
     await db.conn.commit()
     cur = await db.conn.execute("SELECT key, value FROM bot_texts")
     _cache = {row["key"]: row["value"] for row in await cur.fetchall()}
+
+    for key, stale_values in _STALE_DEFAULTS.items():
+        if _cache.get(key) in stale_values:
+            await set_text(db, key, DEFAULTS[key])
 
 
 async def set_text(db: Database, key: str, value: str) -> None:

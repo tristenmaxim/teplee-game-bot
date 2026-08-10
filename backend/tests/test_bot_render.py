@@ -10,15 +10,19 @@ def test_rank_emoji_zones():
 
 
 def test_render_empty_state():
-    text = render_game_message(42, "ru", [], None, solved=False)
+    text = render_game_message(42, "ru", [], None, solved=False, hints_used=0)
     assert "Слово дня #42" in text and "🇷🇺" in text and "Попыток: 0" in text
+    assert "Подсказок: 0" in text
     assert "Пиши слова" in text
 
 
 def test_render_top5_and_last():
     attempts = [{"word": f"w{i}", "rank": r} for i, r in enumerate([14, 88, 250, 610, 3400, 9000])]
-    text = render_game_message(42, "en", attempts, {"word": "животное", "rank": 250}, False)
+    text = render_game_message(
+        42, "en", attempts, {"word": "животное", "rank": 250}, False, hints_used=2
+    )
     assert "последнее: животное — 250 🟨" in text
+    assert "Подсказок: 2" in text
     top5_section = text.split("Топ-5:")[1]
     assert top5_section.count("·") == 5  # top-5 only, sixth attempt not shown
     assert "🟩 14 · w0" in text and "⬜ 3400 · w4" in text
@@ -26,7 +30,9 @@ def test_render_top5_and_last():
 
 
 def test_render_solved_banner():
-    text = render_game_message(1, "ru", [{"word": "кот", "rank": 1}], None, solved=True)
+    text = render_game_message(
+        1, "ru", [{"word": "кот", "rank": 1}], None, solved=True, hints_used=0
+    )
     assert "🏆" in text
 
 

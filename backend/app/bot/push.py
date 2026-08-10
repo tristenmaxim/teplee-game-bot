@@ -18,7 +18,7 @@ log = logging.getLogger(__name__)
 
 CHUNK_SIZE = 25
 CHUNK_INTERVAL_S = 1.0
-LANG_FLAG = {"ru": "🇷🇺", "en": "🇬🇧"}
+LANG_FLAG = {"ru": "🇷🇺", "en": "🇺🇸"}
 
 
 async def _yesterdays_words(db: Database, day_id: int) -> dict[str, str]:
@@ -52,7 +52,9 @@ async def send_daily_push(bot: Bot, db: Database) -> None:
         blurb = _push_text(day_id, lang, yesterday.get(lang))
         game_key = game.daily_game_key(lang, day_id)
         s = await game.state(db, telegram_id, game_key, lang)
-        game_text = render.render_game_message(s["day_no"], lang, s["attempts"], None, s["solved"])
+        game_text = render.render_game_message(
+            s["day_no"], lang, s["attempts"], None, s["solved"], s["hints_used"]
+        )
         text = f"{blurb}\n\n{game_text}"
         keyboard = render.game_keyboard()
         try:

@@ -12,7 +12,7 @@ log = logging.getLogger(__name__)
 
 BOT_COMMANDS = [
     BotCommand(command="help", description="🌡️ Как играть"),
-    BotCommand(command="lang", description="🇷🇺/🇬🇧 Сменить язык слова"),
+    BotCommand(command="lang", description="🇷🇺/🇺🇸 Сменить язык слова"),
     BotCommand(command="stats", description="📊 Статистика и стрик"),
     BotCommand(command="hint", description="💡 Подсказка"),
     BotCommand(command="challenge", description="⚔️ Загадать другу"),
