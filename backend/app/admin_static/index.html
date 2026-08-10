@@ -5,68 +5,175 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Теплее! — тексты бота</title>
 <style>
-  :root { color-scheme: light dark; }
+  :root {
+    color-scheme: light dark;
+    --bg: #f4f4f7;
+    --surface: #ffffff;
+    --surface-2: #fafafb;
+    --border: #e3e3e8;
+    --text: #17171a;
+    --text-dim: #6b6b73;
+    --text-faint: #9a9aa2;
+    --accent: #0a7cff;
+    --accent-text: #ffffff;
+    --warn: #e08300;
+    --warn-bg: #fff6e8;
+    --danger: #e0393e;
+    --ok: #1f9254;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #131316;
+      --surface: #1b1b1f;
+      --surface-2: #202024;
+      --border: #2d2d33;
+      --text: #f0f0f2;
+      --text-dim: #a6a6ae;
+      --text-faint: #77777f;
+      --accent: #3d97ff;
+      --accent-text: #06111f;
+      --warn: #e0a030;
+      --warn-bg: #2c2410;
+      --danger: #ff6b6f;
+      --ok: #3fc274;
+    }
+  }
   * { box-sizing: border-box; }
+  html, body { background: var(--bg); }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    margin: 0; background: #f5f5f7; color: #1c1c1e;
+    font-family: var(--sans);
+    margin: 0; color: var(--text);
+    font-size: 15px;
   }
   header {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 16px 24px; background: #fff; border-bottom: 1px solid #e5e5ea;
-    position: sticky; top: 0; z-index: 1;
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    padding: 14px 28px; background: var(--surface); border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 2;
   }
-  header h1 { font-size: 18px; margin: 0; }
-  header a { color: #666; font-size: 14px; text-decoration: none; }
-  main { max-width: 780px; margin: 0 auto; padding: 24px; }
+  header .title { display: flex; align-items: baseline; gap: 10px; }
+  header h1 { font-size: 17px; margin: 0; font-weight: 650; }
+  header .counts { font-size: 13px; color: var(--text-dim); }
+  header a.logout {
+    color: var(--text-dim); font-size: 13px; text-decoration: none;
+    border: 1px solid var(--border); padding: 6px 12px; border-radius: 8px;
+  }
+  header a.logout:hover { color: var(--text); border-color: var(--text-faint); }
+
+  .toolbar {
+    position: sticky; top: 53px; z-index: 2; background: var(--bg);
+    padding: 16px 28px 8px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+    max-width: 1080px; margin: 0 auto;
+  }
   .search {
-    width: 100%; padding: 10px 14px; margin-bottom: 16px; font-size: 14px;
-    border: 1px solid #d1d1d6; border-radius: 10px; background: #fff;
+    flex: 1; min-width: 220px; padding: 11px 14px; font-size: 14px;
+    border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text);
   }
+  .search:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .filter-chip {
+    padding: 8px 14px; border-radius: 999px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text-dim); font-size: 13px; cursor: pointer; white-space: nowrap;
+  }
+  .filter-chip.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+
+  main { max-width: 1080px; margin: 0 auto; padding: 12px 28px 60px; }
+
+  .group { margin-top: 28px; }
+  .group summary {
+    list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px;
+    font-size: 13px; font-weight: 650; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--text-dim); padding: 6px 0; user-select: none;
+  }
+  .group summary::-webkit-details-marker { display: none; }
+  .group summary::before { content: "▸"; font-size: 11px; transition: transform .15s; }
+  .group[open] summary::before { transform: rotate(90deg); }
+  .group summary .group-count { font-weight: 500; color: var(--text-faint); }
+
+  .grid { display: flex; flex-direction: column; gap: 12px; margin-top: 10px; }
+
   .item {
-    background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 12px;
-    border: 1px solid #e5e5ea;
+    background: var(--surface); border-radius: 14px; padding: 16px 18px;
+    border: 1px solid var(--border);
   }
-  .item.overridden { border-color: #ff9500; }
+  .item.overridden { border-color: var(--warn); background: var(--warn-bg); }
   .item-head {
     display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
-    margin-bottom: 8px;
+    margin-bottom: 10px;
   }
-  .label { font-weight: 600; font-size: 14px; }
-  .key { color: #999; font-size: 11px; font-family: ui-monospace, monospace; }
+  .label { font-weight: 600; font-size: 14.5px; }
+  .key { color: var(--text-faint); font-size: 11.5px; font-family: var(--mono); margin-top: 2px; }
+
   textarea {
-    width: 100%; min-height: 64px; font-size: 14px; padding: 10px;
-    border: 1px solid #d1d1d6; border-radius: 8px; resize: vertical;
-    font-family: inherit; line-height: 1.4;
+    width: 100%; min-height: 96px; font-size: 15px; padding: 12px 14px;
+    border: 1px solid var(--border); border-radius: 10px; resize: vertical;
+    font-family: var(--sans); line-height: 1.55; background: var(--surface-2); color: var(--text);
+    overflow: hidden;
   }
-  .vars { font-size: 11px; color: #888; margin-top: 6px; font-family: ui-monospace, monospace; }
-  .row { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
+  textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+  .vars {
+    font-size: 12px; color: var(--text-dim); margin-top: 8px; font-family: var(--mono);
+    display: flex; gap: 6px; flex-wrap: wrap;
+  }
+  .vars .v { background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px; }
+
+  .row { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
   button {
-    font-size: 13px; padding: 7px 14px; border-radius: 8px; border: none;
-    cursor: pointer; font-weight: 500;
+    font-size: 13.5px; padding: 8px 16px; border-radius: 9px; border: none;
+    cursor: pointer; font-weight: 550; font-family: var(--sans);
   }
-  .save { background: #007aff; color: #fff; }
-  .save:disabled { background: #c7c7cc; cursor: default; }
-  .reset { background: #f2f2f7; color: #ff3b30; }
-  .status { font-size: 12px; color: #34c759; }
-  .error { font-size: 12px; color: #ff3b30; }
+  .save { background: var(--accent); color: var(--accent-text); }
+  .save:disabled { background: var(--border); color: var(--text-faint); cursor: default; }
+  .reset { background: transparent; color: var(--danger); border: 1px solid var(--border) !important; }
+  .reset:hover { border-color: var(--danger) !important; }
+  .msg { font-size: 12.5px; margin-left: 2px; }
+  .msg.status { color: var(--ok); }
+  .msg.error { color: var(--danger); }
   .badge {
-    font-size: 10px; color: #ff9500; border: 1px solid #ff9500; border-radius: 6px;
-    padding: 1px 6px;
+    font-size: 10.5px; color: var(--warn); border: 1px solid var(--warn); border-radius: 6px;
+    padding: 1px 7px; font-weight: 600;
   }
+  .empty { color: var(--text-faint); text-align: center; padding: 40px 0; font-size: 14px; }
 </style>
 </head>
 <body>
 <header>
-  <h1>🌡️ Тексты бота</h1>
-  <a href="/admin/logout">Выйти</a>
+  <div class="title">
+    <h1>🌡️ Тексты бота</h1>
+    <span class="counts" id="counts"></span>
+  </div>
+  <a class="logout" href="/admin/logout">Выйти</a>
 </header>
-<main>
+<div class="toolbar">
   <input class="search" id="search" placeholder="Поиск по ключу или тексту…">
-  <div id="list">Загрузка…</div>
+  <button class="filter-chip active" data-filter="all">Все</button>
+  <button class="filter-chip" data-filter="changed">Изменённые</button>
+</div>
+<main id="main">
+  <div class="empty">Загрузка…</div>
 </main>
 <script>
 let allTexts = [];
+let filter = "all";
+
+const GROUPS = [
+  { match: k => k.startsWith("onboarding"), title: "Онбординг" },
+  { match: k => k.startsWith("game_message") || k.startsWith("challenge_message") ||
+               k.startsWith("attempts_") || k === "solved_footer" || k.startsWith("full_list") ||
+               k === "share_text", title: "Игровое сообщение" },
+  { match: k => k.startsWith("btn_"), title: "Кнопки" },
+  { match: k => k.startsWith("challenge_") || k === "creator_notify", title: "Челленджи" },
+  { match: k => k.startsWith("win_"), title: "Победа" },
+  { match: k => k.startsWith("hint_") || k === "word_not_found" || k === "muted" || k === "unmuted",
+    title: "Ошибки и статусы" },
+  { match: k => k === "help" || k === "stats" || k === "lang_switched", title: "Команды" },
+  { match: () => true, title: "Прочее" },
+];
+
+function groupOf(key) {
+  return GROUPS.find(g => g.match(key)).title;
+}
 
 async function load() {
   const res = await fetch("/admin/api/texts");
@@ -75,78 +182,130 @@ async function load() {
   render();
 }
 
+function updateCounts() {
+  const changed = allTexts.filter(t => t.is_overridden).length;
+  document.getElementById("counts").textContent =
+    `${allTexts.length} текстов${changed ? ` · ${changed} изменено` : ""}`;
+}
+
 function render() {
+  updateCounts();
   const q = document.getElementById("search").value.trim().toLowerCase();
-  const list = document.getElementById("list");
-  const items = allTexts.filter(t =>
+  const main = document.getElementById("main");
+
+  let items = allTexts.filter(t =>
     !q || t.key.includes(q) || t.label.toLowerCase().includes(q) || t.value.toLowerCase().includes(q)
   );
-  list.innerHTML = "";
-  for (const t of items) {
-    const el = document.createElement("div");
-    el.className = "item" + (t.is_overridden ? " overridden" : "");
-    el.innerHTML = `
-      <div class="item-head">
-        <div>
-          <div class="label">${escapeHtml(t.label)} ${t.is_overridden ? '<span class="badge">изменено</span>' : ''}</div>
-          <div class="key">${escapeHtml(t.key)}</div>
-        </div>
-      </div>
-      <textarea data-key="${escapeHtml(t.key)}">${escapeHtml(t.value)}</textarea>
-      ${t.vars.length ? `<div class="vars">переменные: ${t.vars.map(v => '{' + v + '}').join(', ')}</div>` : ''}
-      <div class="row">
-        <button class="save" disabled>Сохранить</button>
-        <button class="reset">Сбросить к дефолту</button>
-        <span class="msg"></span>
-      </div>
-    `;
-    const textarea = el.querySelector("textarea");
-    const saveBtn = el.querySelector(".save");
-    const resetBtn = el.querySelector(".reset");
-    const msg = el.querySelector(".msg");
+  if (filter === "changed") items = items.filter(t => t.is_overridden);
 
-    textarea.addEventListener("input", () => {
-      saveBtn.disabled = textarea.value === t.value;
-      msg.textContent = "";
-    });
-
-    saveBtn.addEventListener("click", async () => {
-      msg.className = "msg";
-      msg.textContent = "";
-      const res = await fetch(`/admin/api/texts/${encodeURIComponent(t.key)}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ value: textarea.value }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        msg.className = "error";
-        msg.textContent = body.detail || "Ошибка сохранения";
-        return;
-      }
-      t.value = textarea.value;
-      t.is_overridden = t.value !== t.default;
-      saveBtn.disabled = true;
-      msg.className = "status";
-      msg.textContent = "Сохранено";
-      el.classList.toggle("overridden", t.is_overridden);
-    });
-
-    resetBtn.addEventListener("click", async () => {
-      const res = await fetch(`/admin/api/texts/${encodeURIComponent(t.key)}/reset`, { method: "POST" });
-      if (!res.ok) return;
-      const body = await res.json();
-      t.value = body.value;
-      t.is_overridden = false;
-      textarea.value = body.value;
-      saveBtn.disabled = true;
-      msg.className = "status";
-      msg.textContent = "Сброшено";
-      el.classList.remove("overridden");
-    });
-
-    list.appendChild(el);
+  main.innerHTML = "";
+  if (!items.length) {
+    main.innerHTML = '<div class="empty">Ничего не найдено</div>';
+    return;
   }
+
+  const byGroup = new Map();
+  for (const t of items) {
+    const g = groupOf(t.key);
+    if (!byGroup.has(g)) byGroup.set(g, []);
+    byGroup.get(g).push(t);
+  }
+
+  for (const g of GROUPS.map(x => x.title)) {
+    if (!byGroup.has(g)) continue;
+    const groupItems = byGroup.get(g);
+    const details = document.createElement("details");
+    details.className = "group";
+    details.open = true;
+    const changedInGroup = groupItems.filter(t => t.is_overridden).length;
+    details.innerHTML = `<summary>${g} <span class="group-count">${groupItems.length}${changedInGroup ? ` · ${changedInGroup} изменено` : ""}</span></summary>`;
+    const grid = document.createElement("div");
+    grid.className = "grid";
+    for (const t of groupItems) grid.appendChild(renderItem(t));
+    details.appendChild(grid);
+    main.appendChild(details);
+  }
+}
+
+function autoGrow(el) {
+  el.style.height = "auto";
+  el.style.height = (el.scrollHeight + 2) + "px";
+}
+
+function renderItem(t) {
+  const el = document.createElement("div");
+  el.className = "item" + (t.is_overridden ? " overridden" : "");
+  el.innerHTML = `
+    <div class="item-head">
+      <div>
+        <div class="label">${escapeHtml(t.label)} ${t.is_overridden ? '<span class="badge">изменено</span>' : ''}</div>
+        <div class="key">${escapeHtml(t.key)}</div>
+      </div>
+    </div>
+    <textarea data-key="${escapeHtml(t.key)}">${escapeHtml(t.value)}</textarea>
+    ${t.vars.length ? `<div class="vars">${t.vars.map(v => `<span class="v">{${v}}</span>`).join('')}</div>` : ''}
+    <div class="row">
+      <button class="save" disabled>Сохранить</button>
+      <button class="reset">Сбросить к дефолту</button>
+      <span class="msg"></span>
+    </div>
+  `;
+  const textarea = el.querySelector("textarea");
+  const saveBtn = el.querySelector(".save");
+  const resetBtn = el.querySelector(".reset");
+  const msg = el.querySelector(".msg");
+
+  requestAnimationFrame(() => autoGrow(textarea));
+
+  textarea.addEventListener("input", () => {
+    autoGrow(textarea);
+    saveBtn.disabled = textarea.value === t.value;
+    msg.textContent = "";
+  });
+
+  textarea.addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && !saveBtn.disabled) saveBtn.click();
+  });
+
+  saveBtn.addEventListener("click", async () => {
+    msg.className = "msg";
+    msg.textContent = "";
+    const res = await fetch(`/admin/api/texts/${encodeURIComponent(t.key)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value: textarea.value }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      msg.className = "msg error";
+      msg.textContent = body.detail || "Ошибка сохранения";
+      return;
+    }
+    t.value = textarea.value;
+    t.is_overridden = t.value !== t.default;
+    saveBtn.disabled = true;
+    msg.className = "msg status";
+    msg.textContent = "Сохранено";
+    el.classList.toggle("overridden", t.is_overridden);
+    updateCounts();
+  });
+
+  resetBtn.addEventListener("click", async () => {
+    const res = await fetch(`/admin/api/texts/${encodeURIComponent(t.key)}/reset`, { method: "POST" });
+    if (!res.ok) return;
+    const body = await res.json();
+    t.value = body.value;
+    t.is_overridden = false;
+    textarea.value = body.value;
+    autoGrow(textarea);
+    saveBtn.disabled = true;
+    msg.className = "msg status";
+    msg.textContent = "Сброшено";
+    el.classList.remove("overridden");
+    updateCounts();
+  });
+
+  return el;
 }
 
 function escapeHtml(s) {
@@ -154,6 +313,15 @@ function escapeHtml(s) {
 }
 
 document.getElementById("search").addEventListener("input", render);
+document.querySelectorAll(".filter-chip").forEach(chip => {
+  chip.addEventListener("click", () => {
+    document.querySelectorAll(".filter-chip").forEach(c => c.classList.remove("active"));
+    chip.classList.add("active");
+    filter = chip.dataset.filter;
+    render();
+  });
+});
+
 load();
 </script>
 </body>
