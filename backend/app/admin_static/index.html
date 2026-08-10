@@ -423,9 +423,18 @@ async function loadDashboard() {
     ["total_challenges", "Челленджей создано"],
     ["won_challenges", "Челленджей выиграно"],
   ];
+  const pct = (v) => (v === null || v === undefined ? "—" : Math.round(v * 100) + "%");
+  const extraTiles = [
+    ["Доля дошедших до победы", pct(d.win_share_today)],
+    ["Медиана попыток до победы", d.median_attempts_to_win],
+    ["Retention D1", `${pct(d.retention_d1.rate)} (${d.retention_d1.retained}/${d.retention_d1.cohort})`],
+    ["Retention D7", `${pct(d.retention_d7.rate)} (${d.retention_d7.retained}/${d.retention_d7.cohort})`],
+    ["Retention D30", `${pct(d.retention_d30.rate)} (${d.retention_d30.retained}/${d.retention_d30.cohort})`],
+  ];
   el.innerHTML = `
     <div class="metrics">
       ${tiles.map(([k, l]) => `<div class="metric"><div class="n">${d[k]}</div><div class="l">${l}</div></div>`).join("")}
+      ${extraTiles.map(([l, v]) => `<div class="metric"><div class="n">${v}</div><div class="l">${l}</div></div>`).join("")}
     </div>
     <h2>Топ по стрику</h2>
     ${d.streak_leaders.length ? `

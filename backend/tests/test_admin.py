@@ -115,8 +115,50 @@ async def test_dashboard_metrics_counts_day0_activity(db):
     assert m["active_today"] == 2
     assert m["solved_today"] == 1
     assert m["avg_attempts_today"] == 1.0
+    assert m["win_share_today"] == 0.5
+    assert m["median_attempts_to_win"] == 1
     assert m["muted_users"] == 1
     assert any(u["telegram_id"] == 1 and u["streak"] == 1 for u in m["streak_leaders"])
+
+
+async def test_dashboard_metrics_median_attempts_to_win(db):
+    # user 1 wins in 2 tries, user 2 wins in 4 tries -> median 3
+    await game.guess(db, 1, "d:0:ru", "ru", "деньги")  # rank 100
+    await game.guess(db, 1, "d:0:ru", "ru", "кот")  # win, 2 tries
+    await game.guess(db, 2, "d:0:ru", "ru", "собака")
+    await game.guess(db, 2, "d:0:ru", "ru", "пар")
+    await game.guess(db, 2, "d:0:ru", "ru", "деньги")
+    await game.guess(db, 2, "d:0:ru", "ru", "кот")  # win, 4 tries
+
+    m = await admin_stats.dashboard_metrics(db, day_id=0)
+
+    assert m["median_attempts_to_win"] == 3
+
+
+async def _seed_attempt(db, telegram_id: int, game_key: str, word: str, rank: int) -> None:
+    await game.ensure_user(db, telegram_id)
+    await db.conn.execute(
+        "INSERT INTO attempts (telegram_id, game_key, word, rank) VALUES (?, ?, ?, ?)",
+        (telegram_id, game_key, word, rank),
+    )
+    await db.conn.commit()
+
+
+async def test_dashboard_metrics_retention(db):
+    # telegram_id 1: first daily play on day 0, returns on day 1 and day 7 -> D1, D7 retained
+    await _seed_attempt(db, 1, "d:0:ru", "деньги", 100)
+    await _seed_attempt(db, 1, "d:1:ru", "деньги", 100)
+    await _seed_attempt(db, 1, "d:7:ru", "деньги", 100)
+    # telegram_id 2: first daily play on day 0, never returns -> not retained
+    await _seed_attempt(db, 2, "d:0:ru", "деньги", 100)
+
+    d1 = (await admin_stats.dashboard_metrics(db, day_id=1))["retention_d1"]
+    d7 = (await admin_stats.dashboard_metrics(db, day_id=7))["retention_d7"]
+    d30 = (await admin_stats.dashboard_metrics(db, day_id=30))["retention_d30"]
+
+    assert d1 == {"cohort": 2, "retained": 1, "rate": 0.5}
+    assert d7 == {"cohort": 2, "retained": 1, "rate": 0.5}
+    assert d30 == {"cohort": 2, "retained": 0, "rate": 0.0}
 
 
 async def test_search_users_by_id_and_username(db):
