@@ -1,5 +1,8 @@
+from unittest.mock import AsyncMock, Mock
+
 import pytest
 import pytest_asyncio
+from aiogram.exceptions import TelegramForbiddenError
 from httpx import ASGITransport, AsyncClient
 
 from app.admin_auth import (
@@ -10,8 +13,10 @@ from app.admin_auth import (
     verify_login_token,
     verify_session,
 )
+from app.bot.broadcast import send_broadcast
 from app.main import app
-from app.services import texts
+from app.services import admin as admin_stats
+from app.services import game, texts
 
 # --- bot-issued one-time login token ---
 
@@ -96,11 +101,99 @@ async def test_texts_list_reports_override_state(db):
     assert after["value"] == "custom"
 
 
+# --- admin dashboard / user search / upcoming words ---
+
+async def test_dashboard_metrics_counts_day0_activity(db):
+    await game.guess(db, 1, "d:0:ru", "ru", "кот")  # rank 1 -> win
+    await game.guess(db, 2, "d:0:ru", "ru", "деньги")  # rank 100, not a win
+    await db.conn.execute("UPDATE users SET notifications = 0 WHERE telegram_id = 2")
+    await db.conn.commit()
+
+    m = await admin_stats.dashboard_metrics(db, day_id=0)
+
+    assert m["total_users"] == 2
+    assert m["active_today"] == 2
+    assert m["solved_today"] == 1
+    assert m["avg_attempts_today"] == 1.0
+    assert m["muted_users"] == 1
+    assert any(u["telegram_id"] == 1 and u["streak"] == 1 for u in m["streak_leaders"])
+
+
+async def test_search_users_by_id_and_username(db):
+    await game.ensure_user(db, 777, username="tester", first_name="Tess")
+
+    by_id = await admin_stats.search_users(db, "777")
+    assert len(by_id) == 1
+    assert by_id[0]["telegram_id"] == 777
+
+    by_username = await admin_stats.search_users(db, "test")
+    assert any(u["telegram_id"] == 777 for u in by_username)
+
+    assert await admin_stats.search_users(db, "") == []
+    assert await admin_stats.search_users(db, "nobody-like-this") == []
+
+
+async def test_search_users_reports_attempts_and_wins(db):
+    await game.guess(db, 5, "d:0:ru", "ru", "кот")  # win
+    await game.guess(db, 5, "d:0:ru", "ru", "собака")
+
+    users = await admin_stats.search_users(db, "5")
+    assert users[0]["attempts_total"] == 2
+    assert users[0]["wins"] == 1
+
+
+async def test_upcoming_words_reveals_answers_with_dates(db):
+    from app.services import clock
+
+    words = await admin_stats.upcoming_words(db, days=2, day_id=0)
+
+    assert {(w["day_id"], w["lang"], w["word"]) for w in words} == {
+        (0, "ru", "кот"),
+        (0, "en", "cat"),
+        (1, "ru", "собака"),
+    }
+    day0 = next(w for w in words if w["day_id"] == 0 and w["lang"] == "ru")
+    assert day0["date"] == clock.EPOCH_DATE.isoformat()
+
+
+# --- broadcast ---
+
+def _fake_bot() -> AsyncMock:
+    bot = AsyncMock()
+    bot.send_message = AsyncMock()
+    return bot
+
+
+async def test_send_broadcast_reaches_all_users(db):
+    await game.ensure_user(db, 1)
+    await game.ensure_user(db, 2)
+    bot = _fake_bot()
+
+    result = await send_broadcast(bot, db, "hello")
+
+    assert result == {"sent": 2, "forbidden": 0, "total": 2}
+    assert bot.send_message.await_count == 2
+
+
+async def test_send_broadcast_mutes_forbidden_users(db):
+    await game.ensure_user(db, 1)
+    await game.ensure_user(db, 2)
+    bot = _fake_bot()
+    bot.send_message.side_effect = [None, TelegramForbiddenError(method=None, message="blocked")]
+
+    result = await send_broadcast(bot, db, "hello")
+
+    assert result["sent"] == 1
+    assert result["forbidden"] == 1
+    assert (await game.get_user(db, 2))["notifications"] == 0
+
+
 # --- admin API ---
 
 @pytest_asyncio.fixture
 async def admin_client(db):
     app.state.db = db
+    app.state.bot = None
     await texts.init_cache(db)
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
@@ -159,3 +252,38 @@ async def test_admin_api_texts_crud(admin_client):
     res = await admin_client.post("/admin/api/texts/word_not_found/reset")
     assert res.status_code == 200
     assert texts.get("word_not_found") == texts.DEFAULTS["word_not_found"]
+
+
+async def test_admin_api_dashboard_and_words_and_users(admin_client, db):
+    await game.ensure_user(db, 42, username="owner")
+    admin_client.cookies.set(COOKIE_NAME, sign_session(42))
+
+    res = await admin_client.get("/admin/api/dashboard")
+    assert res.status_code == 200
+    assert res.json()["total_users"] == 1
+
+    res = await admin_client.get("/admin/api/words")
+    assert res.status_code == 200
+    assert isinstance(res.json(), list)
+
+    res = await admin_client.get("/admin/api/users?q=owner")
+    assert res.status_code == 200
+    assert res.json()[0]["telegram_id"] == 42
+
+
+async def test_admin_api_broadcast_without_bot_is_503(admin_client):
+    admin_client.cookies.set(COOKIE_NAME, sign_session(42))
+    res = await admin_client.post("/admin/api/broadcast", json={"text": "hi"})
+    assert res.status_code == 503
+
+
+async def test_admin_api_broadcast_with_bot(admin_client, db):
+    await game.ensure_user(db, 1)
+    app.state.bot = Mock(send_message=AsyncMock())
+    admin_client.cookies.set(COOKIE_NAME, sign_session(42))
+
+    res = await admin_client.post("/admin/api/broadcast", json={"text": "hi all"})
+
+    assert res.status_code == 200
+    assert res.json()["sent"] == 1
+    app.state.bot = None

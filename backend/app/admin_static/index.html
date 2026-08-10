@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Теплее! — тексты бота</title>
+<title>Теплее! — админка</title>
 <style>
   :root {
     color-scheme: light dark;
@@ -19,6 +19,7 @@
     --warn: #e08300;
     --warn-bg: #fff6e8;
     --danger: #e0393e;
+    --danger-bg: #fdecec;
     --ok: #1f9254;
     --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
@@ -37,6 +38,7 @@
       --warn: #e0a030;
       --warn-bg: #2c2410;
       --danger: #ff6b6f;
+      --danger-bg: #2c1414;
       --ok: #3fc274;
     }
   }
@@ -50,7 +52,7 @@
   header {
     display: flex; align-items: center; justify-content: space-between; gap: 16px;
     padding: 14px 28px; background: var(--surface); border-bottom: 1px solid var(--border);
-    position: sticky; top: 0; z-index: 2;
+    position: sticky; top: 0; z-index: 3;
   }
   header .title { display: flex; align-items: baseline; gap: 10px; }
   header h1 { font-size: 17px; margin: 0; font-weight: 650; }
@@ -61,8 +63,20 @@
   }
   header a.logout:hover { color: var(--text); border-color: var(--text-faint); }
 
+  nav.tabs {
+    position: sticky; top: 53px; z-index: 3; background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    display: flex; gap: 4px; padding: 0 28px; overflow-x: auto;
+  }
+  nav.tabs button {
+    background: none; border: none; padding: 12px 16px; font-size: 14px;
+    color: var(--text-dim); cursor: pointer; font-weight: 550; white-space: nowrap;
+    border-bottom: 2px solid transparent; margin-bottom: -1px; border-radius: 0;
+  }
+  nav.tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
+  nav.tabs button:hover { color: var(--text); }
+
   .toolbar {
-    position: sticky; top: 53px; z-index: 2; background: var(--bg);
     padding: 16px 28px 8px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
     max-width: 1080px; margin: 0 auto;
   }
@@ -78,6 +92,8 @@
   .filter-chip.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 
   main { max-width: 1080px; margin: 0 auto; padding: 12px 28px 60px; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
 
   .group { margin-top: 28px; }
   .group summary {
@@ -92,7 +108,7 @@
 
   .grid { display: flex; flex-direction: column; gap: 12px; margin-top: 10px; }
 
-  .item {
+  .item, .card {
     background: var(--surface); border-radius: 14px; padding: 16px 18px;
     border: 1px solid var(--border);
   }
@@ -119,7 +135,7 @@
   .vars .v { background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px; }
 
   .row { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
-  button {
+  button.btn {
     font-size: 13.5px; padding: 8px 16px; border-radius: 9px; border: none;
     cursor: pointer; font-weight: 550; font-family: var(--sans);
   }
@@ -135,25 +151,100 @@
     padding: 1px 7px; font-weight: 600;
   }
   .empty { color: var(--text-faint); text-align: center; padding: 40px 0; font-size: 14px; }
+
+  /* dashboard */
+  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 16px; }
+  .metric { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; }
+  .metric .n { font-size: 26px; font-weight: 700; }
+  .metric .l { font-size: 12.5px; color: var(--text-dim); margin-top: 2px; }
+  h2 { font-size: 14px; margin: 28px 0 4px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em; }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  th, td { text-align: left; padding: 9px 12px; font-size: 13.5px; border-bottom: 1px solid var(--border); }
+  th { color: var(--text-dim); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+  tr:last-child td { border-bottom: none; }
+
+  /* broadcast */
+  .warn-box { background: var(--danger-bg); border: 1px solid var(--danger); border-radius: 10px; padding: 12px 14px; font-size: 13px; color: var(--danger); margin-top: 10px; }
 </style>
 </head>
 <body>
 <header>
   <div class="title">
-    <h1>🌡️ Тексты бота</h1>
+    <h1>🌡️ Теплее! — админка</h1>
     <span class="counts" id="counts"></span>
   </div>
   <a class="logout" href="/admin/logout">Выйти</a>
 </header>
-<div class="toolbar">
+<nav class="tabs">
+  <button class="active" data-tab="texts">Тексты</button>
+  <button data-tab="dashboard">Дашборд</button>
+  <button data-tab="users">Пользователи</button>
+  <button data-tab="words">Слова дня</button>
+  <button data-tab="broadcast">Рассылка</button>
+</nav>
+
+<div class="toolbar" id="texts-toolbar">
   <input class="search" id="search" placeholder="Поиск по ключу или тексту…">
   <button class="filter-chip active" data-filter="all">Все</button>
   <button class="filter-chip" data-filter="changed">Изменённые</button>
 </div>
-<main id="main">
-  <div class="empty">Загрузка…</div>
+
+<main>
+  <div class="tab-panel active" id="tab-texts">
+    <div id="texts-list"><div class="empty">Загрузка…</div></div>
+  </div>
+  <div class="tab-panel" id="tab-dashboard">
+    <div id="dashboard-content"><div class="empty">Загрузка…</div></div>
+  </div>
+  <div class="tab-panel" id="tab-users">
+    <div class="toolbar" style="padding-left:0;padding-right:0">
+      <input class="search" id="user-search" placeholder="Telegram id, username или имя…">
+    </div>
+    <div id="users-content"></div>
+  </div>
+  <div class="tab-panel" id="tab-words">
+    <div id="words-content"><div class="empty">Загрузка…</div></div>
+  </div>
+  <div class="tab-panel" id="tab-broadcast">
+    <div class="card" style="margin-top:16px">
+      <div class="label" style="margin-bottom:10px">Сообщение всем пользователям</div>
+      <textarea id="broadcast-text" placeholder="Текст рассылки…" style="min-height:120px"></textarea>
+      <div class="row">
+        <button class="btn save" id="broadcast-send">Отправить всем</button>
+        <span class="msg" id="broadcast-msg"></span>
+      </div>
+      <div class="warn-box">Уходит всем пользователям бота сразу, без возможности отменить. Telegram может забанить бота за спам-жалобы — используй только для важных объявлений.</div>
+    </div>
+  </div>
 </main>
+
 <script>
+// ---------- tabs ----------
+document.querySelectorAll("nav.tabs button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("nav.tabs button").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById(`tab-${btn.dataset.tab}`).classList.add("active");
+    document.getElementById("texts-toolbar").style.display = btn.dataset.tab === "texts" ? "flex" : "none";
+    document.getElementById("counts").textContent = "";
+    if (btn.dataset.tab === "texts") updateTextsCounts();
+    if (btn.dataset.tab === "dashboard" && !dashboardLoaded) loadDashboard();
+    if (btn.dataset.tab === "words" && !wordsLoaded) loadWords();
+  });
+});
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+async function apiGet(url) {
+  const res = await fetch(url);
+  if (res.status === 401) { location.href = "/admin/login"; throw new Error("unauthorized"); }
+  return res.json();
+}
+
+// ---------- texts tab ----------
 let allTexts = [];
 let filter = "all";
 
@@ -175,32 +266,30 @@ function groupOf(key) {
   return GROUPS.find(g => g.match(key)).title;
 }
 
-async function load() {
-  const res = await fetch("/admin/api/texts");
-  if (res.status === 401) { location.href = "/admin/login"; return; }
-  allTexts = await res.json();
-  render();
+async function loadTexts() {
+  allTexts = await apiGet("/admin/api/texts");
+  renderTexts();
 }
 
-function updateCounts() {
+function updateTextsCounts() {
   const changed = allTexts.filter(t => t.is_overridden).length;
   document.getElementById("counts").textContent =
     `${allTexts.length} текстов${changed ? ` · ${changed} изменено` : ""}`;
 }
 
-function render() {
-  updateCounts();
+function renderTexts() {
+  updateTextsCounts();
   const q = document.getElementById("search").value.trim().toLowerCase();
-  const main = document.getElementById("main");
+  const list = document.getElementById("texts-list");
 
   let items = allTexts.filter(t =>
     !q || t.key.includes(q) || t.label.toLowerCase().includes(q) || t.value.toLowerCase().includes(q)
   );
   if (filter === "changed") items = items.filter(t => t.is_overridden);
 
-  main.innerHTML = "";
+  list.innerHTML = "";
   if (!items.length) {
-    main.innerHTML = '<div class="empty">Ничего не найдено</div>';
+    list.innerHTML = '<div class="empty">Ничего не найдено</div>';
     return;
   }
 
@@ -221,9 +310,9 @@ function render() {
     details.innerHTML = `<summary>${g} <span class="group-count">${groupItems.length}${changedInGroup ? ` · ${changedInGroup} изменено` : ""}</span></summary>`;
     const grid = document.createElement("div");
     grid.className = "grid";
-    for (const t of groupItems) grid.appendChild(renderItem(t));
+    for (const t of groupItems) grid.appendChild(renderTextItem(t));
     details.appendChild(grid);
-    main.appendChild(details);
+    list.appendChild(details);
   }
 }
 
@@ -232,7 +321,7 @@ function autoGrow(el) {
   el.style.height = (el.scrollHeight + 2) + "px";
 }
 
-function renderItem(t) {
+function renderTextItem(t) {
   const el = document.createElement("div");
   el.className = "item" + (t.is_overridden ? " overridden" : "");
   el.innerHTML = `
@@ -245,8 +334,8 @@ function renderItem(t) {
     <textarea data-key="${escapeHtml(t.key)}">${escapeHtml(t.value)}</textarea>
     ${t.vars.length ? `<div class="vars">${t.vars.map(v => `<span class="v">{${v}}</span>`).join('')}</div>` : ''}
     <div class="row">
-      <button class="save" disabled>Сохранить</button>
-      <button class="reset">Сбросить к дефолту</button>
+      <button class="btn save" disabled>Сохранить</button>
+      <button class="btn reset">Сбросить к дефолту</button>
       <span class="msg"></span>
     </div>
   `;
@@ -287,7 +376,7 @@ function renderItem(t) {
     msg.className = "msg status";
     msg.textContent = "Сохранено";
     el.classList.toggle("overridden", t.is_overridden);
-    updateCounts();
+    updateTextsCounts();
   });
 
   resetBtn.addEventListener("click", async () => {
@@ -302,27 +391,153 @@ function renderItem(t) {
     msg.className = "msg status";
     msg.textContent = "Сброшено";
     el.classList.remove("overridden");
-    updateCounts();
+    updateTextsCounts();
   });
 
   return el;
 }
 
-function escapeHtml(s) {
-  return s.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-}
-
-document.getElementById("search").addEventListener("input", render);
+document.getElementById("search").addEventListener("input", renderTexts);
 document.querySelectorAll(".filter-chip").forEach(chip => {
   chip.addEventListener("click", () => {
     document.querySelectorAll(".filter-chip").forEach(c => c.classList.remove("active"));
     chip.classList.add("active");
     filter = chip.dataset.filter;
-    render();
+    renderTexts();
   });
 });
 
-load();
+// ---------- dashboard tab ----------
+let dashboardLoaded = false;
+
+async function loadDashboard() {
+  const d = await apiGet("/admin/api/dashboard");
+  dashboardLoaded = true;
+  const el = document.getElementById("dashboard-content");
+  const tiles = [
+    ["total_users", "Всего игроков"],
+    ["active_today", "Играли сегодня"],
+    ["solved_today", "Угадали сегодня"],
+    ["avg_attempts_today", "Ср. попыток сегодня"],
+    ["muted_users", "Отключили напоминания"],
+    ["total_challenges", "Челленджей создано"],
+    ["won_challenges", "Челленджей выиграно"],
+  ];
+  el.innerHTML = `
+    <div class="metrics">
+      ${tiles.map(([k, l]) => `<div class="metric"><div class="n">${d[k]}</div><div class="l">${l}</div></div>`).join("")}
+    </div>
+    <h2>Топ по стрику</h2>
+    ${d.streak_leaders.length ? `
+      <table>
+        <thead><tr><th>Игрок</th><th>Telegram id</th><th>Стрик</th></tr></thead>
+        <tbody>
+          ${d.streak_leaders.map(u => `
+            <tr>
+              <td>${escapeHtml(u.username ? "@" + u.username : (u.first_name || "—"))}</td>
+              <td>${u.telegram_id}</td>
+              <td>${u.streak}🔥</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    ` : '<div class="empty">Пока никто не набрал стрик</div>'}
+  `;
+}
+
+// ---------- users tab ----------
+let userSearchTimer = null;
+document.getElementById("user-search").addEventListener("input", (e) => {
+  clearTimeout(userSearchTimer);
+  const q = e.target.value.trim();
+  userSearchTimer = setTimeout(() => searchUsers(q), 250);
+});
+
+async function searchUsers(q) {
+  const el = document.getElementById("users-content");
+  if (!q) { el.innerHTML = ""; return; }
+  el.innerHTML = '<div class="empty">Ищу…</div>';
+  const users = await apiGet(`/admin/api/users?q=${encodeURIComponent(q)}`);
+  if (!users.length) { el.innerHTML = '<div class="empty">Никого не нашлось</div>'; return; }
+  el.innerHTML = `
+    <table>
+      <thead>
+        <tr><th>Игрок</th><th>Telegram id</th><th>Язык</th><th>Стрик</th><th>Побед/попыток</th><th>Напоминания</th><th>С нами с</th></tr>
+      </thead>
+      <tbody>
+        ${users.map(u => `
+          <tr>
+            <td>${escapeHtml(u.username ? "@" + u.username : (u.first_name || "—"))}</td>
+            <td>${u.telegram_id}</td>
+            <td>${u.lang_mode === "en" ? "🇺🇸" : "🇷🇺"}</td>
+            <td>${u.streak}🔥</td>
+            <td>${u.wins}/${u.attempts_total}</td>
+            <td>${u.notifications ? "вкл" : "выкл"}</td>
+            <td>${(u.created_at || "").slice(0, 10)}</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+// ---------- words tab ----------
+let wordsLoaded = false;
+
+async function loadWords() {
+  const words = await apiGet("/admin/api/words");
+  wordsLoaded = true;
+  const el = document.getElementById("words-content");
+  if (!words.length) { el.innerHTML = '<div class="empty">Слова на ближайшие дни не сгенерированы</div>'; return; }
+  el.innerHTML = `
+    <table>
+      <thead><tr><th>Дата</th><th>День #</th><th>Язык</th><th>Слово</th></tr></thead>
+      <tbody>
+        ${words.map(w => `
+          <tr>
+            <td>${w.date}</td>
+            <td>${w.day_id}</td>
+            <td>${w.lang === "en" ? "🇺🇸" : "🇷🇺"}</td>
+            <td><b>${escapeHtml(w.word)}</b></td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+// ---------- broadcast tab ----------
+document.getElementById("broadcast-send").addEventListener("click", async () => {
+  const textarea = document.getElementById("broadcast-text");
+  const msg = document.getElementById("broadcast-msg");
+  const text = textarea.value.trim();
+  if (!text) return;
+  if (!confirm(`Отправить это сообщение всем пользователям бота?\n\n«${text}»`)) return;
+
+  const btn = document.getElementById("broadcast-send");
+  btn.disabled = true;
+  msg.className = "msg";
+  msg.textContent = "Отправляю…";
+
+  const res = await fetch("/admin/api/broadcast", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  btn.disabled = false;
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    msg.className = "msg error";
+    msg.textContent = body.detail || "Ошибка отправки";
+    return;
+  }
+  const body = await res.json();
+  msg.className = "msg status";
+  msg.textContent = `Отправлено: ${body.sent} из ${body.total}${body.forbidden ? `, недоступно: ${body.forbidden}` : ""}`;
+  textarea.value = "";
+});
+
+loadTexts();
 </script>
 </body>
 </html>

@@ -1,11 +1,12 @@
-"""Admin panel: bot-text editor UI. Auth via a link the bot sends on /admin."""
+"""Admin panel: bot-text editor + dashboard. Auth via a link the bot sends on /admin."""
 
 from pathlib import Path
 from typing import Annotated
 
+from aiogram import Bot
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.admin_auth import (
     COOKIE_NAME,
@@ -17,7 +18,9 @@ from app.admin_auth import (
     sign_session,
     verify_login_token,
 )
+from app.bot.broadcast import send_broadcast
 from app.db import Database
+from app.services import admin as admin_stats
 from app.services import texts
 
 router = APIRouter()
@@ -26,6 +29,10 @@ STATIC_DIR = Path(__file__).parent / "admin_static"
 
 def get_db(request: Request) -> Database:
     return request.app.state.db
+
+
+def get_bot(request: Request) -> Bot | None:
+    return request.app.state.bot
 
 
 @router.get("/admin/login", response_model=None)
@@ -107,3 +114,44 @@ async def api_reset_text(
         raise HTTPException(404, "unknown key")
     value = await texts.reset_text(db, key)
     return {"key": key, "value": value}
+
+
+@router.get("/admin/api/dashboard")
+async def api_dashboard(
+    db: Annotated[Database, Depends(get_db)],
+    _admin_id: Annotated[int, Depends(require_admin)],
+) -> dict:
+    return await admin_stats.dashboard_metrics(db)
+
+
+@router.get("/admin/api/users")
+async def api_search_users(
+    db: Annotated[Database, Depends(get_db)],
+    _admin_id: Annotated[int, Depends(require_admin)],
+    q: str = "",
+) -> list[dict]:
+    return await admin_stats.search_users(db, q)
+
+
+@router.get("/admin/api/words")
+async def api_upcoming_words(
+    db: Annotated[Database, Depends(get_db)],
+    _admin_id: Annotated[int, Depends(require_admin)],
+) -> list[dict]:
+    return await admin_stats.upcoming_words(db)
+
+
+class BroadcastIn(BaseModel):
+    text: str = Field(min_length=1, max_length=4000)
+
+
+@router.post("/admin/api/broadcast")
+async def api_broadcast(
+    body: BroadcastIn,
+    db: Annotated[Database, Depends(get_db)],
+    bot: Annotated[Bot | None, Depends(get_bot)],
+    _admin_id: Annotated[int, Depends(require_admin)],
+) -> dict:
+    if bot is None:
+        raise HTTPException(503, "bot is not running")
+    return await send_broadcast(bot, db, body.text)

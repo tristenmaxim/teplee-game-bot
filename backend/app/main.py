@@ -37,8 +37,10 @@ async def lifespan(app: FastAPI):
     bot_task: asyncio.Task | None = None
     scheduler: AsyncIOScheduler | None = None
     bot: Bot | None = None
+    app.state.bot = None  # set below when the bot actually runs; admin_api checks this
     if settings.run_bot and settings.bot_token != "test:token":
         bot = Bot(token=settings.bot_token)
+        app.state.bot = bot
         bot_task = asyncio.create_task(run_bot(bot, app.state.db))
 
         scheduler = AsyncIOScheduler(timezone=MSK)
