@@ -21,7 +21,7 @@ from app.bot.handlers import (
     router,
     update_game_message,
 )
-from app.services import challenge, game, texts
+from app.services import challenge, game, texts, timing
 
 
 def _fake_bot(next_message_id: int = 100) -> AsyncMock:
@@ -284,6 +284,35 @@ async def test_cmd_start_expired_challenge_link(db):
 
     assert (await game.get_user(db, 1))["active_game"] is None
     assert message.answer.await_args_list[0].args[0] == texts.get("challenge_expired")
+
+
+async def test_cmd_start_with_timing_challenge_link_sends_webapp_button(db):
+    await game.ensure_user(db, 2, username="creator")
+    challenge_id = await timing.create_challenge(db, 2, "hidden")
+
+    bot = _fake_bot()
+    message = _fake_message(f"/start t_{challenge_id}", user_id=1)
+
+    await cmd_start(message, db, bot)
+
+    message.answer.assert_awaited_once()
+    text, kwargs = message.answer.await_args.args, message.answer.await_args.kwargs
+    assert "@creator" in text[0]
+    assert (
+        f"timing_challenge={challenge_id}"
+        in kwargs["reply_markup"].inline_keyboard[0][0].web_app.url
+    )
+    # unlike the semantic-challenge path, no active_game/onboarding side effects
+    assert (await game.get_user(db, 1))["active_game"] is None
+
+
+async def test_cmd_start_expired_timing_challenge_link(db):
+    bot = _fake_bot()
+    message = _fake_message("/start t_doesnotexist", user_id=1)
+
+    await cmd_start(message, db, bot)
+
+    message.answer.assert_awaited_once_with(texts.get("challenge_expired"))
 
 
 async def test_cmd_start_bare_resets_active_game_to_daily(db):

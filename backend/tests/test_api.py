@@ -139,3 +139,59 @@ async def test_post_challenge_word_not_found_409(client, fake_vectors, monkeypat
     )
     assert r.status_code == 409
     assert r.json()["detail"] == "word_not_found"
+
+
+async def test_timing_solo_round(client):
+    h = auth_headers(user_id=888)
+    start = (await client.post("/api/timing/start", json={"mode": "visible"}, headers=h)).json()
+    assert "round_id" in start and "target_ms" in start
+
+    stop = await client.post(
+        "/api/timing/stop", json={"round_id": start["round_id"]}, headers=h
+    )
+    assert stop.status_code == 200
+    body = stop.json()
+    assert {"elapsed_ms", "target_ms", "delta_ms", "rating"} <= body.keys()
+
+    replay = await client.post(
+        "/api/timing/stop", json={"round_id": start["round_id"]}, headers=h
+    )
+    assert replay.status_code == 404
+
+
+async def test_timing_challenge_flow(client):
+    creator = auth_headers(user_id=444)
+    created = await client.post(
+        "/api/timing/challenge", json={"mode": "hidden"}, headers=creator
+    )
+    assert created.status_code == 200
+    body = created.json()
+    challenge_id = body["id"]
+    assert body["link"] == f"https://t.me/teplee_bot?start=t_{challenge_id}"
+
+    friend = auth_headers(user_id=445)
+    start = await client.post(
+        "/api/timing/start", json={"mode": "visible", "challenge": challenge_id}, headers=friend
+    )
+    assert start.status_code == 200
+    assert start.json()["mode"] == "hidden"  # challenge's mode overrides the request
+
+    await client.post(
+        "/api/timing/stop", json={"round_id": start.json()["round_id"]}, headers=friend
+    )
+
+    replay = await client.post(
+        "/api/timing/start", json={"challenge": challenge_id}, headers=friend
+    )
+    assert replay.status_code == 409 and replay.json()["detail"] == "already_played"
+
+    results = await client.get(f"/api/timing/challenge/{challenge_id}", headers=creator)
+    assert results.status_code == 200
+    assert len(results.json()["results"]) == 1
+
+
+async def test_timing_start_unknown_challenge_404(client):
+    r = await client.post(
+        "/api/timing/start", json={"challenge": "nope"}, headers=auth_headers(user_id=446)
+    )
+    assert r.status_code == 404

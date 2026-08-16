@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from app.auth import InvalidInitData, TelegramUser, validate_init_data
 from app.config import get_settings
 from app.db import Database
-from app.services import challenge, game, vectors, wordle
+from app.services import challenge, game, timing, vectors, wordle
 from app.services.game import AlreadySolved, HintUnavailable, WordNotFound
 
 router = APIRouter(prefix="/api")
@@ -114,6 +114,19 @@ class ChallengeIn(BaseModel):
 
 class WordleGuessIn(BaseModel):
     word: str = Field(min_length=1, max_length=10)
+
+
+class TimingStartIn(BaseModel):
+    mode: Literal["visible", "hidden"] = "visible"
+    challenge: str | None = None
+
+
+class TimingStopIn(BaseModel):
+    round_id: str = Field(min_length=1, max_length=64)
+
+
+class TimingChallengeIn(BaseModel):
+    mode: Literal["visible", "hidden"] = "visible"
 
 
 # --- endpoints ---
@@ -249,3 +262,57 @@ async def post_wordle_guess(
         "game_over": result.game_over,
         "streak": result.streak,
     }
+
+
+@router.post("/timing/start")
+async def post_timing_start(
+    body: TimingStartIn,
+    user: Annotated[TelegramUser, Depends(current_user)],
+    db: Annotated[Database, Depends(get_db)],
+):
+    try:
+        return await timing.start_round(db, user.id, body.mode, body.challenge)
+    except timing.ChallengeNotFound:
+        raise HTTPException(404, "challenge not found or expired") from None
+    except timing.AlreadyPlayed:
+        raise HTTPException(409, "already_played") from None
+
+
+@router.post("/timing/stop")
+async def post_timing_stop(
+    body: TimingStopIn,
+    user: Annotated[TelegramUser, Depends(current_user)],
+    db: Annotated[Database, Depends(get_db)],
+):
+    try:
+        return await timing.stop_round(db, user.id, body.round_id)
+    except timing.RoundNotFound:
+        raise HTTPException(404, "round_not_found") from None
+
+
+@router.post("/timing/challenge")
+async def post_timing_challenge(
+    body: TimingChallengeIn,
+    user: Annotated[TelegramUser, Depends(current_user)],
+    db: Annotated[Database, Depends(get_db)],
+):
+    settings = get_settings()
+    challenge_id = await timing.create_challenge(db, user.id, body.mode)
+    return {
+        "id": challenge_id,
+        "mode": body.mode,
+        "link": f"https://t.me/{settings.bot_username}?start=t_{challenge_id}",
+    }
+
+
+@router.get("/timing/challenge/{challenge_id}")
+async def get_timing_challenge(
+    challenge_id: str,
+    _user: Annotated[TelegramUser, Depends(current_user)],
+    db: Annotated[Database, Depends(get_db)],
+):
+    meta = await timing.challenge_meta(db, challenge_id)
+    if meta is None:
+        raise HTTPException(404, "challenge not found or expired")
+    results = await timing.challenge_results(db, challenge_id)
+    return {"mode": meta["mode"], "results": results}

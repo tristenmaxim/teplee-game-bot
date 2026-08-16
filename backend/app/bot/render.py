@@ -28,7 +28,9 @@ def _attempts_body(attempts: list[dict], last: dict | None, solved: bool) -> lis
         lines += [
             "",
             texts.get(
-                "attempts_last_line", word=last["word"], rank=last["rank"],
+                "attempts_last_line",
+                word=last["word"],
+                rank=last["rank"],
                 emoji=rank_emoji(last["rank"]),
             ),
         ]
@@ -152,9 +154,7 @@ def challenge_win_keyboard() -> InlineKeyboardMarkup:
 def render_full_list(attempts: list[dict], lang: str, hints_used: int) -> str:
     """Full rank-sorted attempts list, unlike render_game_message's top-5 preview."""
     lines = [
-        texts.get(
-            "full_list_header", flag=LANG_FLAG[lang], count=len(attempts), hints=hints_used
-        )
+        texts.get("full_list_header", flag=LANG_FLAG[lang], count=len(attempts), hints=hints_used)
     ]
     if attempts:
         lines += ["", *[f"{rank_emoji(a['rank'])} {a['rank']} · {a['word']}" for a in attempts]]
@@ -192,3 +192,16 @@ def challenge_intro_text(who: str) -> str:
 
 def creator_notify_text(who: str, attempts_count: int) -> str:
     return texts.get("creator_notify", who=who, attempts_count=attempts_count)
+
+
+def timing_challenge_intro_text(who: str) -> str:
+    return texts.get("timing_challenge_intro", who=who)
+
+
+def timing_challenge_keyboard(challenge_id: str) -> InlineKeyboardMarkup:
+    url = f"{get_settings().webapp_url}/?timing_challenge={challenge_id}"
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=texts.get("btn_open_app"), web_app=WebAppInfo(url=url))]
+        ]
+    )

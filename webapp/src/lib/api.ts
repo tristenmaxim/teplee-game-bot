@@ -1,6 +1,13 @@
 import { getInitData } from './telegram'
 import type { GameState, GuessResponse, Lang } from '../types'
 import type { WordleGuessResponse, WordleState } from '../wordleTypes'
+import type {
+  TimingChallengeInfo,
+  TimingChallengeResponse,
+  TimingMode,
+  TimingStartResponse,
+  TimingStopResponse,
+} from '../timingTypes'
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api'
 
@@ -63,4 +70,32 @@ export function postWordleGuess(word: string): Promise<WordleGuessResponse> {
     method: 'POST',
     body: JSON.stringify({ word }),
   })
+}
+
+export function postTimingStart(
+  mode: TimingMode,
+  challenge?: string,
+): Promise<TimingStartResponse> {
+  return request<TimingStartResponse>('/timing/start', {
+    method: 'POST',
+    body: JSON.stringify({ mode, challenge }),
+  })
+}
+
+export function postTimingStop(roundId: string): Promise<TimingStopResponse> {
+  return request<TimingStopResponse>('/timing/stop', {
+    method: 'POST',
+    body: JSON.stringify({ round_id: roundId }),
+  })
+}
+
+export function postTimingChallenge(mode: TimingMode): Promise<TimingChallengeResponse> {
+  return request<TimingChallengeResponse>('/timing/challenge', {
+    method: 'POST',
+    body: JSON.stringify({ mode }),
+  })
+}
+
+export function getTimingChallenge(id: string): Promise<TimingChallengeInfo> {
+  return request<TimingChallengeInfo>(`/timing/challenge/${id}`)
 }

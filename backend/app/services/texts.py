@@ -45,6 +45,9 @@ DEFAULTS: dict[str, str] = {
     "challenge_own_link": "😄 Это же твоя собственная ссылка!",
     "challenge_created": "🎉 Готово! Отправь другу:\n{link}\n\nЯ загадал слово. Слабо угадать? 😏",
     "challenge_intro": "⚔️ {who} загадал тебе слово! Пиши свои варианты 👇",
+    "timing_challenge_intro": (
+        "⚡ {who} бросил тебе вызов на точность! Жми «Открыть игру» и лови момент ⏱"
+    ),
     "creator_notify": "🏆 {who} угадал твоё слово за {attempts_count} попыток!",
     "game_message_header": (
         "🎯 Слово дня #{day_no} ({flag}) · Попыток: {count} · Подсказок: {hints}"
@@ -102,6 +105,7 @@ LABELS: dict[str, str] = {
     "challenge_own_link": "Переход по своей же ссылке",
     "challenge_created": "Челлендж создан — ссылка другу",
     "challenge_intro": "Вход в чужой челлендж",
+    "timing_challenge_intro": "Вход в чужой вызов на точность",
     "creator_notify": "Уведомление автору о победе друга",
     "game_message_header": "Заголовок игрового сообщения (daily)",
     "challenge_message_header": "Заголовок игрового сообщения (челлендж)",

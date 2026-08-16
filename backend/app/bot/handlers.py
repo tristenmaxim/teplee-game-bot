@@ -12,7 +12,7 @@ from app.admin_auth import admin_ids, sign_login_token
 from app.bot import render
 from app.config import get_settings
 from app.db import Database
-from app.services import challenge, game, texts, vectors
+from app.services import challenge, game, texts, timing, vectors
 from app.services.game import AlreadySolved, GuessResult, HintUnavailable, WordNotFound
 
 router = Router()
@@ -132,6 +132,25 @@ async def update_game_message(
 async def cmd_start(message: Message, db: Database, bot: Bot) -> None:
     args = (message.text or "").split(maxsplit=1)
     payload = args[1] if len(args) > 1 else None
+
+    if payload and payload.startswith("t_"):
+        # Timing-game challenge deep link: Mini App only, no daily/game_message
+        # state to touch — just hand over a WebApp button and stop.
+        await game.ensure_user(
+            db, message.from_user.id, message.from_user.username, message.from_user.first_name
+        )
+        challenge_id = payload.removeprefix("t_")
+        meta = await timing.challenge_meta(db, challenge_id)
+        if meta is None:
+            await message.answer(texts.get("challenge_expired"))
+        else:
+            creator = await game.get_user(db, meta["creator_id"])
+            await message.answer(
+                render.timing_challenge_intro_text(_display_name(creator)),
+                reply_markup=render.timing_challenge_keyboard(challenge_id),
+            )
+        return
+
     referred_by = payload if payload and payload.startswith("c_") else None
     await game.ensure_user(
         db,
@@ -371,7 +390,9 @@ async def _handle_win(
     await bot.send_message(
         user_id,
         texts.get(
-            "win_challenge", word=result.word, attempts_count=result.attempts_count,
+            "win_challenge",
+            word=result.word,
+            attempts_count=result.attempts_count,
             hints_used=result.hints_used,
         ),
         reply_markup=render.challenge_win_keyboard(),

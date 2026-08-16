@@ -76,6 +76,36 @@ CREATE TABLE IF NOT EXISTS wordle_attempts (
   created_at  TEXT DEFAULT (datetime('now')),
   PRIMARY KEY (telegram_id, game_key, attempt_no)
 );
+
+CREATE TABLE IF NOT EXISTS timing_rounds (
+  round_id      TEXT PRIMARY KEY,
+  telegram_id   INTEGER NOT NULL,
+  game_key      TEXT    NOT NULL,
+  mode          TEXT    NOT NULL,
+  target_ms     INTEGER NOT NULL,
+  started_at_ms INTEGER NOT NULL,
+  elapsed_ms    INTEGER,
+  stopped_at_ms INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_timing_rounds_user ON timing_rounds(telegram_id, game_key);
+
+CREATE TABLE IF NOT EXISTS timing_challenges (
+  id          TEXT PRIMARY KEY,
+  creator_id  INTEGER NOT NULL,
+  mode        TEXT NOT NULL,
+  target_ms   INTEGER NOT NULL,
+  created_at  TEXT DEFAULT (datetime('now')),
+  expires_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS timing_results (
+  challenge_id TEXT NOT NULL,
+  telegram_id  INTEGER NOT NULL,
+  elapsed_ms   INTEGER NOT NULL,
+  delta_ms     INTEGER NOT NULL,
+  played_at    TEXT DEFAULT (datetime('now')),
+  PRIMARY KEY (challenge_id, telegram_id)
+);
 """
 
 
