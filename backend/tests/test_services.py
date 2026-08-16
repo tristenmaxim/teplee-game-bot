@@ -83,6 +83,15 @@ async def test_guess_win_and_streak(db):
     assert r3.streak == 2 and r3.is_new is False
 
 
+async def test_guess_blocked_after_win(db):
+    await game.guess(db, 1, "d:0:ru", "ru", "кот")  # win
+    with pytest.raises(game.AlreadySolved):
+        await game.guess(db, 1, "d:0:ru", "ru", "кошка")
+    # replaying an already-tried word (even the winning one) is still fine
+    r = await game.guess(db, 1, "d:0:ru", "ru", "кот")
+    assert r.is_new is False and r.is_win
+
+
 async def test_streak_resets_after_gap(db):
     await game.guess(db, 1, "d:0:ru", "ru", "кот")
     # day 1 skipped -> the day-3 win starts a fresh streak

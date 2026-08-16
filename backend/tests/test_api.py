@@ -63,6 +63,16 @@ async def test_word_not_found_409(client):
     assert r.json()["detail"] == "word_not_found"
 
 
+async def test_guess_blocked_after_win_409(client):
+    h = auth_headers(user_id=333)
+    await client.post("/api/guess", json={"word": "кот"}, headers=h)  # win
+    r = await client.post("/api/guess", json={"word": "кошка"}, headers=h)
+    assert r.status_code == 409 and r.json()["detail"] == "solved"
+    # replaying the winning word is still fine
+    r2 = await client.post("/api/guess", json={"word": "кот"}, headers=h)
+    assert r2.status_code == 200 and r2.json()["is_win"]
+
+
 async def test_hint_flow(client):
     h = auth_headers(user_id=222)
 

@@ -33,6 +33,7 @@ DEFAULTS: dict[str, str] = {
     "unmuted": "🔔 Напоминания включены — жду тебя каждое утро!",
     "hint_no_attempts": "🤷 Сначала напиши хотя бы одно слово — тогда будет от чего подсказывать!",
     "hint_solved": "🏆 Уже угадано, подсказка ни к чему!",
+    "already_solved": "🏆 Уже угадано!",
     "challenge_ask_word": (
         "🎯 Напиши слово, которое загадаешь другу — следующим сообщением.\n\n"
         "Нужно существительное из словаря. Передумал? Жми /start — вернёмся к игре."
@@ -54,11 +55,11 @@ DEFAULTS: dict[str, str] = {
     "attempts_last_line": "последнее: {word} — {rank} {emoji}",
     "attempts_top5_label": "Топ-5:",
     "attempts_empty": "Пиши слова — я скажу, насколько ты близко 🌡️",
-    "solved_footer": "🏆 Слово угадано! Можно дорешивать — ранги покажу, статистика не пострадает.",
+    "solved_footer": "🏆 Слово угадано!",
     "full_list_header": "📋 Все слова ({flag}) · Попыток: {count} · Подсказок: {hints}",
     "full_list_empty": "Пока ни одного слова — начни угадывать 🌡️",
     "share_text": (
-        "Теплее! #{day_no} {flag} | Попыток: {count} | {boxes} | "
+        "Теплее! #{day_no} {flag} | Попыток: {count} | Подсказок: {hints} | {boxes} | "
         "Стрик: {streak}🔥 | t.me/{bot_username}"
     ),
     "btn_open_app": "🎮 Открыть игру",
@@ -92,6 +93,7 @@ LABELS: dict[str, str] = {
     "unmuted": "/unmute подтверждение",
     "hint_no_attempts": "Подсказка недоступна: нет попыток",
     "hint_solved": "Подсказка недоступна: уже решено",
+    "already_solved": "Попытка угадать после победы",
     "challenge_ask_word": "Запрос слова для челленджа",
     "challenge_pending": "Челлендж создаётся…",
     "challenge_word_not_found": "Слово для челленджа не найдено",

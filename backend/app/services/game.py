@@ -23,6 +23,10 @@ class HintUnavailable(Exception):
         super().__init__(reason)
 
 
+class AlreadySolved(Exception):
+    """The game is already solved; no further guesses allowed."""
+
+
 @dataclass
 class GuessResult:
     word: str
@@ -135,7 +139,15 @@ async def guess(
     )
     existing = await cur.fetchone()
     is_new = existing is None
+
     if is_new:
+        cur = await db.conn.execute(
+            "SELECT 1 FROM attempts WHERE telegram_id = ? AND game_key = ? AND rank = 1",
+            (telegram_id, game_key),
+        )
+        if await cur.fetchone() is not None:
+            raise AlreadySolved()
+
         await db.conn.execute(
             "INSERT INTO attempts (telegram_id, game_key, word, rank, via_hint) "
             "VALUES (?, ?, ?, ?, ?)",

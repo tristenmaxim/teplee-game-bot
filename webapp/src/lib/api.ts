@@ -1,5 +1,6 @@
 import { getInitData } from './telegram'
 import type { GameState, GuessResponse, Lang } from '../types'
+import type { WordleGuessResponse, WordleState } from '../wordleTypes'
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api'
 
@@ -50,5 +51,16 @@ export function postLang(lang: Lang): Promise<{ lang: Lang }> {
   return request<{ lang: Lang }>('/lang', {
     method: 'POST',
     body: JSON.stringify({ lang }),
+  })
+}
+
+export function getWordleState(): Promise<WordleState> {
+  return request<WordleState>('/wordle/state')
+}
+
+export function postWordleGuess(word: string): Promise<WordleGuessResponse> {
+  return request<WordleGuessResponse>('/wordle/guess', {
+    method: 'POST',
+    body: JSON.stringify({ word }),
   })
 }

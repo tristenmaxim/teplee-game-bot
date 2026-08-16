@@ -67,6 +67,15 @@ CREATE TABLE IF NOT EXISTS bot_texts (
   value      TEXT NOT NULL,
   updated_at TEXT DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS wordle_attempts (
+  telegram_id INTEGER NOT NULL,
+  game_key    TEXT    NOT NULL,
+  attempt_no  INTEGER NOT NULL,
+  word        TEXT    NOT NULL,
+  created_at  TEXT DEFAULT (datetime('now')),
+  PRIMARY KEY (telegram_id, game_key, attempt_no)
+);
 """
 
 
@@ -110,6 +119,8 @@ class Database:
         await _add_column_if_missing(
             conn, "users", "awaiting_challenge", "INTEGER NOT NULL DEFAULT 0"
         )
+        await _add_column_if_missing(conn, "users", "wordle_streak", "INTEGER NOT NULL DEFAULT 0")
+        await _add_column_if_missing(conn, "users", "last_wordle_win_day", "INTEGER")
         await conn.commit()
         return cls(conn)
 

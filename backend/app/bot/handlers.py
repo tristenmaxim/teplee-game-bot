@@ -13,7 +13,7 @@ from app.bot import render
 from app.config import get_settings
 from app.db import Database
 from app.services import challenge, game, texts, vectors
-from app.services.game import GuessResult, HintUnavailable, WordNotFound
+from app.services.game import AlreadySolved, GuessResult, HintUnavailable, WordNotFound
 
 router = Router()
 
@@ -350,7 +350,9 @@ async def _handle_win(
     if game_key.startswith("d:"):
         s = await game.state(db, user_id, game_key, lang)
         me = await bot.get_me()
-        share = render.share_text(s["day_no"], lang, s["attempts"], result.streak, me.username)
+        share = render.share_text(
+            s["day_no"], lang, s["attempts"], result.streak, result.hints_used, me.username
+        )
         await bot.send_message(
             user_id,
             texts.get(
@@ -447,6 +449,10 @@ async def on_guess(message: Message, db: Database, bot: Bot) -> None:
         result = await game.guess(db, user_id, game_key, lang, message.text)
     except WordNotFound:
         err = await message.answer(texts.get("word_not_found"))
+        asyncio.create_task(_delete_later(bot, message.chat.id, err.message_id))
+        return
+    except AlreadySolved:
+        err = await message.answer(texts.get("already_solved"))
         asyncio.create_task(_delete_later(bot, message.chat.id, err.message_id))
         return
 

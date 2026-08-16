@@ -171,6 +171,25 @@ async def test_on_guess_word_not_found_keeps_user_message(db, monkeypatch):
     bot.delete_message.assert_not_called()
 
 
+async def test_on_guess_already_solved_replies_without_new_game_message(db, monkeypatch):
+    """No 'дорешивать': once the daily word is solved, a further new guess
+    must not be recorded or trigger a fresh game message — just a reply."""
+    monkeypatch.setattr(
+        "app.bot.handlers.game.daily_game_key", lambda lang, day_id=None: f"d:0:{lang}"
+    )
+    await game.guess(db, 1, "d:0:ru", "ru", "кот")  # win
+
+    bot = _fake_bot()
+    message = _fake_message("кошка")
+
+    await on_guess(message, db, bot)
+
+    message.answer.assert_awaited_once_with(texts.get("already_solved"))
+    bot.send_message.assert_not_called()
+    s = await game.state(db, 1, "d:0:ru", "ru")
+    assert s["attempts_count"] == 1  # "кошка" was not recorded
+
+
 async def test_cb_show_all_sends_full_list_without_touching_game_message(db, monkeypatch):
     monkeypatch.setattr(
         "app.bot.handlers.game.daily_game_key", lambda lang, day_id=None: f"d:0:{lang}"

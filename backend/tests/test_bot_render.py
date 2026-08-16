@@ -38,6 +38,6 @@ def test_render_solved_banner():
 
 def test_share_text_no_spoilers():
     attempts = [{"word": "секретище", "rank": 1}, {"word": "тепло", "rank": 500}]
-    s = share_text(42, "ru", attempts, streak=5, bot_username="teplee_game_bot")
+    s = share_text(42, "ru", attempts, streak=5, hints_used=1, bot_username="teplee_game_bot")
     assert "секретище" not in s and "тепло" not in s
     assert "#42" in s and "Стрик: 5🔥" in s and "t.me/teplee_game_bot" in s

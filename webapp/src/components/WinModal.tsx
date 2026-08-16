@@ -11,10 +11,11 @@ interface Props {
   lang: Lang
   attempts: Attempt[]
   streak: number
+  hintsUsed: number
   onClose: () => void
 }
 
-export function WinModal({ dayNo, lang, attempts, streak, onClose }: Props) {
+export function WinModal({ dayNo, lang, attempts, streak, hintsUsed, onClose }: Props) {
   useEffect(() => {
     confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } })
   }, [])
@@ -23,7 +24,7 @@ export function WinModal({ dayNo, lang, attempts, streak, onClose }: Props) {
     const bar = shareBar(attempts)
     const text =
       `Теплее! ${dayNo != null ? `#${dayNo} ` : ''}${LANG_FLAG[lang]} | ` +
-      `Попыток: ${attempts.length} | ${bar} | Стрик: ${streak}🔥`
+      `Попыток: ${attempts.length} | Подсказок: ${hintsUsed} | ${bar} | Стрик: ${streak}🔥`
     const botUrl = BOT_USERNAME ? `https://t.me/${BOT_USERNAME}` : 'https://t.me'
     const link = `https://t.me/share/url?url=${encodeURIComponent(botUrl)}&text=${encodeURIComponent(text)}`
     openShareLink(link)
@@ -36,7 +37,7 @@ export function WinModal({ dayNo, lang, attempts, streak, onClose }: Props) {
         <h2 className="mt-2 text-xl font-semibold text-tg-text">Угадано!</h2>
         <p className="mt-1 text-tg-hint">
           {dayNo != null ? `День #${dayNo} ${LANG_FLAG[lang]}` : LANG_FLAG[lang]} · Попыток:{' '}
-          {attempts.length}
+          {attempts.length} · Подсказок: {hintsUsed}
         </p>
         <p className="mt-2 text-lg">{shareBar(attempts)}</p>
         {streak > 0 && <p className="mt-2 font-medium text-tg-text">Стрик: {streak}🔥</p>}
@@ -54,7 +55,7 @@ export function WinModal({ dayNo, lang, attempts, streak, onClose }: Props) {
             onClick={onClose}
             className="rounded-full bg-tg-secondary-bg px-5 py-2.5 font-medium text-tg-text"
           >
-            Дорешивать
+            Закрыть
           </button>
         </div>
       </div>

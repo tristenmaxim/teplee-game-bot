@@ -23,6 +23,7 @@ export interface GuessResponse {
   is_win: boolean
   attempts_count: number
   streak: number
+  hints_used: number
 }
 
 const MAX_RANK = 30000

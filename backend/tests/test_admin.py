@@ -176,8 +176,8 @@ async def test_search_users_by_id_and_username(db):
 
 
 async def test_search_users_reports_attempts_and_wins(db):
+    await game.guess(db, 5, "d:0:ru", "ru", "кошка")
     await game.guess(db, 5, "d:0:ru", "ru", "кот")  # win
-    await game.guess(db, 5, "d:0:ru", "ru", "собака")
 
     users = await admin_stats.search_users(db, "5")
     assert users[0]["attempts_total"] == 2

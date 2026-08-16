@@ -10,8 +10,8 @@ from pydantic import BaseModel, Field
 from app.auth import InvalidInitData, TelegramUser, validate_init_data
 from app.config import get_settings
 from app.db import Database
-from app.services import challenge, game, vectors
-from app.services.game import HintUnavailable, WordNotFound
+from app.services import challenge, game, vectors, wordle
+from app.services.game import AlreadySolved, HintUnavailable, WordNotFound
 
 router = APIRouter(prefix="/api")
 
@@ -112,6 +112,10 @@ class ChallengeIn(BaseModel):
     word: str = Field(min_length=1, max_length=50)
 
 
+class WordleGuessIn(BaseModel):
+    word: str = Field(min_length=1, max_length=10)
+
+
 # --- endpoints ---
 
 @router.get("/health")
@@ -142,6 +146,8 @@ async def post_guess(
         result = await game.guess(db, user.id, game_key, lang, body.word)
     except WordNotFound:
         raise HTTPException(409, "word_not_found") from None
+    except AlreadySolved:
+        raise HTTPException(409, "solved") from None
     return {
         "word": result.word,
         "rank": result.rank,
@@ -149,6 +155,7 @@ async def post_guess(
         "is_win": result.is_win,
         "attempts_count": result.attempts_count,
         "streak": result.streak,
+        "hints_used": result.hints_used,
     }
 
 
@@ -170,6 +177,7 @@ async def post_hint(
         "is_win": result.is_win,
         "attempts_count": result.attempts_count,
         "streak": result.streak,
+        "hints_used": result.hints_used,
     }
 
 
@@ -210,4 +218,34 @@ async def post_challenge(
     return {
         "id": challenge_id,
         "link": f"https://t.me/{settings.bot_username}?start=c_{challenge_id}",
+    }
+
+
+@router.get("/wordle/state")
+async def get_wordle_state(
+    user: Annotated[TelegramUser, Depends(current_user)],
+    db: Annotated[Database, Depends(get_db)],
+):
+    return await wordle.state(db, user.id, wordle.daily_game_key())
+
+
+@router.post("/wordle/guess")
+async def post_wordle_guess(
+    body: WordleGuessIn,
+    user: Annotated[TelegramUser, Depends(current_user)],
+    db: Annotated[Database, Depends(get_db)],
+):
+    if not guess_bucket.allow(user.id):
+        raise HTTPException(429, "slow down")
+    try:
+        result = await wordle.guess(db, user.id, wordle.daily_game_key(), body.word)
+    except wordle.InvalidGuess:
+        raise HTTPException(409, "word_not_found") from None
+    except wordle.GameOver:
+        raise HTTPException(409, "game_over") from None
+    return {
+        "attempts": [{"word": a.word, "feedback": a.feedback} for a in result.attempts],
+        "solved": result.solved,
+        "game_over": result.game_over,
+        "streak": result.streak,
     }

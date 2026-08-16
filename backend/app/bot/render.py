@@ -163,7 +163,9 @@ def render_full_list(attempts: list[dict], lang: str, hints_used: int) -> str:
     return "\n".join(lines)
 
 
-def share_text(day_no: int, lang: str, attempts: list[dict], streak: int, bot_username: str) -> str:
+def share_text(
+    day_no: int, lang: str, attempts: list[dict], streak: int, hints_used: int, bot_username: str
+) -> str:
     greens = sum(1 for a in attempts if a["rank"] <= 100)
     yellows = sum(1 for a in attempts if 100 < a["rank"] <= 1000)
     whites = len(attempts) - greens - yellows
@@ -173,6 +175,7 @@ def share_text(day_no: int, lang: str, attempts: list[dict], streak: int, bot_us
         day_no=day_no,
         flag=LANG_FLAG[lang],
         count=len(attempts),
+        hints=hints_used,
         boxes=boxes,
         streak=streak,
         bot_username=bot_username,
