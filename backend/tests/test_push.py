@@ -39,6 +39,17 @@ async def test_send_daily_push_happy_path(db):
     assert (await game.get_user(db, 1))["game_message_id"] is not None
     assert (await game.get_user(db, 2))["game_message_id"] is not None
 
+
+async def test_send_daily_push_skips_guests(db):
+    await game.ensure_user(db, 1)
+    await game.ensure_user(db, -123456789012345, None, "Гость")  # web guest, no real chat
+
+    bot = _bot_with_message_ids()
+    await send_daily_push(bot, db)
+
+    assert bot.send_message.await_count == 1
+    assert bot.send_message.await_args_list[0].args[0] == 1
+
 async def test_send_daily_push_respects_mute(db):
     await game.ensure_user(db, 1)
     await db.conn.execute("UPDATE users SET notifications = 0 WHERE telegram_id = 1")

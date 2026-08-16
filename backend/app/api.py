@@ -1,5 +1,7 @@
 """REST API for the Mini App (TECH_SPEC §4). Auth: 'Authorization: tma <initDataRaw>'."""
 
+import json
+import random
 import time
 from collections import defaultdict
 from typing import Annotated, Literal
@@ -7,7 +9,13 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app.auth import InvalidInitData, TelegramUser, validate_init_data
+from app.auth import (
+    InvalidInitData,
+    TelegramUser,
+    sign_init_data,
+    validate_init_data,
+    validate_login_widget,
+)
 from app.config import get_settings
 from app.db import Database
 from app.services import challenge, game, timing, vectors, wordle
@@ -108,6 +116,16 @@ class LangIn(BaseModel):
     lang: Literal["ru", "en"]
 
 
+class LoginWidgetIn(BaseModel):
+    id: int
+    first_name: str
+    last_name: str | None = None
+    username: str | None = None
+    photo_url: str | None = None
+    auth_date: int
+    hash: str
+
+
 class ChallengeIn(BaseModel):
     word: str = Field(min_length=1, max_length=50)
 
@@ -134,6 +152,62 @@ class TimingChallengeIn(BaseModel):
 @router.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+def _mint_session(user_id: int, username: str | None, first_name: str | None) -> str:
+    """Build a Mini-App-shaped session token so current_user() needs no
+    separate code path for web logins/guests vs real Telegram initData."""
+    return sign_init_data(
+        {
+            "auth_date": str(int(time.time())),
+            "user": json.dumps(
+                {"id": user_id, "username": username, "first_name": first_name},
+                separators=(",", ":"),
+            ),
+        },
+        get_settings().bot_token,
+    )
+
+
+@router.post("/auth/login")
+async def post_auth_login(
+    body: LoginWidgetIn,
+    db: Annotated[Database, Depends(get_db)],
+):
+    """Telegram Login Widget → a Mini-App-style session token (TECH_SPEC §4 extension).
+
+    Lets the game be opened in a plain browser, outside any Telegram client,
+    while staying the same telegram_id-keyed account as the bot/Mini App.
+    """
+    data = {k: str(v) for k, v in body.model_dump(exclude_none=True).items()}
+    try:
+        user = validate_login_widget(data, get_settings().bot_token)
+    except InvalidInitData as e:
+        raise HTTPException(401, str(e)) from e
+
+    await game.ensure_user(db, user.id, user.username, user.first_name)
+    return {"init_data": _mint_session(user.id, user.username, user.first_name)}
+
+
+@router.post("/auth/guest")
+async def post_auth_guest(db: Annotated[Database, Depends(get_db)]):
+    """No-Telegram-account entry point: a locally-persisted guest identity.
+
+    Negative telegram_id — real Telegram user ids are always positive, so
+    this is enough to keep guests out of bot-facing paths (daily push,
+    broadcast) that would otherwise try to message a chat that never
+    existed. Guests can't play challenges/share via the bot, only solo.
+    """
+    for _ in range(5):
+        guest_id = -random.randint(10**14, 10**15 - 1)
+        cur = await db.conn.execute("SELECT 1 FROM users WHERE telegram_id = ?", (guest_id,))
+        if await cur.fetchone() is None:
+            break
+    else:
+        raise HTTPException(503, "could not allocate guest id")  # pragma: no cover
+
+    await game.ensure_user(db, guest_id, None, "Гость")
+    return {"init_data": _mint_session(guest_id, None, "Гость")}
 
 
 @router.get("/state")

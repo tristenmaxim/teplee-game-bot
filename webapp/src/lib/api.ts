@@ -1,4 +1,4 @@
-import { getInitData } from './telegram'
+import { clearWebSession, getInitData, isInsideTelegram } from './telegram'
 import type { GameState, GuessResponse, Lang } from '../types'
 import type { WordleGuessResponse, WordleState } from '../wordleTypes'
 import type {
@@ -30,10 +30,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     },
   })
   if (!res.ok) {
+    if (res.status === 401 && !isInsideTelegram()) {
+      // Web session expired/invalid — bounce back to the login widget rather
+      // than showing a dead-end error (only applies outside real Telegram;
+      // inside it, initData is live and a 401 there means something else).
+      clearWebSession()
+      window.dispatchEvent(new Event('teplee:auth-expired'))
+    }
     const body: { detail?: string } = await res.json().catch(() => ({}))
     throw new ApiError(res.status, body.detail ?? res.statusText)
   }
   return res.json() as Promise<T>
+}
+
+export function postAuthGuest(): Promise<{ init_data: string }> {
+  return request<{ init_data: string }>('/auth/guest', { method: 'POST' })
 }
 
 export function getState(): Promise<GameState> {

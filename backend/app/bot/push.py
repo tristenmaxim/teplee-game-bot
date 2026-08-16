@@ -39,8 +39,10 @@ async def send_daily_push(bot: Bot, db: Database) -> None:
     day_id = clock.current_day_id()
     yesterday = await _yesterdays_words(db, day_id)
 
+    # telegram_id > 0: excludes web guests (negative ids, see api.py's
+    # post_auth_guest) — there's no real chat to push a message into.
     cur = await db.conn.execute(
-        "SELECT telegram_id, lang_mode FROM users WHERE notifications = 1"
+        "SELECT telegram_id, lang_mode FROM users WHERE notifications = 1 AND telegram_id > 0"
     )
     rows = await cur.fetchall()
     log.info("daily push: sending to %d users", len(rows))

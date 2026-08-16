@@ -57,6 +57,43 @@ def validate_init_data(
         raise InvalidInitData("missing user") from e
 
 
+def validate_login_widget(
+    data: dict[str, str], bot_token: str, max_age_s: int = 300
+) -> TelegramUser:
+    """Telegram Login Widget (web-only entry point, outside any Telegram client).
+
+    Different scheme from Mini App initData: secret = SHA256(bot_token) (no HMAC
+    layer), and every field except 'hash' is part of the check string — the
+    widget's own docs: https://core.telegram.org/widgets/login#checking-authorization.
+    Short max_age_s (default 5 min) since this only guards the one-time login
+    call, not every request — the session it mints (sign_init_data below) has
+    its own, separate expiry.
+    """
+    pairs = dict(data)
+    received_hash = pairs.pop("hash", None)
+    if not received_hash:
+        raise InvalidInitData("missing hash")
+
+    check_string = "\n".join(f"{k}={v}" for k, v in sorted(pairs.items()))
+    secret = hashlib.sha256(bot_token.encode()).digest()
+    expected = hmac.new(secret, check_string.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, received_hash):
+        raise InvalidInitData("bad signature")
+
+    auth_date = int(pairs.get("auth_date", "0"))
+    if time.time() - auth_date > max_age_s:
+        raise InvalidInitData("login expired")
+
+    try:
+        return TelegramUser(
+            id=int(pairs["id"]),
+            username=pairs.get("username"),
+            first_name=pairs.get("first_name"),
+        )
+    except (KeyError, ValueError) as e:
+        raise InvalidInitData("missing id") from e
+
+
 def sign_init_data(pairs: dict[str, str], bot_token: str) -> str:
     """Build a signed initData string — test fixtures and local tooling only."""
     from urllib.parse import urlencode

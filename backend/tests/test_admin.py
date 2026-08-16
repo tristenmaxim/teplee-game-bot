@@ -217,6 +217,17 @@ async def test_send_broadcast_reaches_all_users(db):
     assert bot.send_message.await_count == 2
 
 
+async def test_send_broadcast_skips_guests(db):
+    await game.ensure_user(db, 1)
+    await game.ensure_user(db, -123456789012345, None, "Гость")
+    bot = _fake_bot()
+
+    result = await send_broadcast(bot, db, "hello")
+
+    assert result == {"sent": 1, "forbidden": 0, "total": 1}
+    assert bot.send_message.await_count == 1
+
+
 async def test_send_broadcast_mutes_forbidden_users(db):
     await game.ensure_user(db, 1)
     await game.ensure_user(db, 2)

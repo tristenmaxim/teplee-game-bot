@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { initTelegram } from './lib/telegram'
+import { getInitData, initTelegram } from './lib/telegram'
 import { TepleeScreen } from './screens/TepleeScreen'
 import { WordleScreen } from './screens/WordleScreen'
 import { TimingScreen } from './screens/TimingScreen'
+import { LoginScreen } from './screens/LoginScreen'
 
 type Tab = 'teplee' | 'wordle' | 'timing'
 
@@ -20,10 +21,18 @@ function initialTab(): Tab {
 
 function App() {
   const [tab, setTab] = useState<Tab>(initialTab)
+  const [authed, setAuthed] = useState(() => Boolean(getInitData()))
 
   useEffect(() => {
     initTelegram()
+    const onAuthExpired = () => setAuthed(false)
+    window.addEventListener('teplee:auth-expired', onAuthExpired)
+    return () => window.removeEventListener('teplee:auth-expired', onAuthExpired)
   }, [])
+
+  if (!authed) {
+    return <LoginScreen onLoggedIn={() => setAuthed(true)} />
+  }
 
   return (
     <div className="flex min-h-svh flex-col bg-tg-bg">

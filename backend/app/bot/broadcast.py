@@ -20,7 +20,9 @@ CHUNK_INTERVAL_S = 1.0
 
 
 async def send_broadcast(bot: Bot, db: Database, text: str) -> dict:
-    cur = await db.conn.execute("SELECT telegram_id FROM users")
+    # telegram_id > 0: excludes web guests (negative ids, see api.py's
+    # post_auth_guest) — there's no real chat to broadcast into.
+    cur = await db.conn.execute("SELECT telegram_id FROM users WHERE telegram_id > 0")
     rows = await cur.fetchall()
 
     sent = forbidden = 0

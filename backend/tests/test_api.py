@@ -195,3 +195,49 @@ async def test_timing_start_unknown_challenge_404(client):
         "/api/timing/start", json={"challenge": "nope"}, headers=auth_headers(user_id=446)
     )
     assert r.status_code == 404
+
+
+async def test_auth_login_widget_mints_usable_session(client):
+    import hashlib
+    import hmac
+
+    pairs = {
+        "id": "321321",
+        "first_name": "Web",
+        "username": "webuser",
+        "auth_date": str(int(time.time())),
+    }
+    secret = hashlib.sha256(BOT_TOKEN.encode()).digest()
+    check_string = "\n".join(f"{k}={v}" for k, v in sorted(pairs.items()))
+    pairs["hash"] = hmac.new(secret, check_string.encode(), hashlib.sha256).hexdigest()
+    pairs["id"] = int(pairs["id"])
+    pairs["auth_date"] = int(pairs["auth_date"])
+
+    login = await client.post("/api/auth/login", json=pairs)
+    assert login.status_code == 200
+    token = login.json()["init_data"]
+
+    # the minted token works exactly like a real Mini App initData header
+    state = await client.get("/api/state", headers={"Authorization": f"tma {token}"})
+    assert state.status_code == 200
+
+
+async def test_auth_guest_mints_usable_session(client):
+    created = await client.post("/api/auth/guest")
+    assert created.status_code == 200
+    token = created.json()["init_data"]
+
+    state = await client.get("/api/state", headers={"Authorization": f"tma {token}"})
+    assert state.status_code == 200
+
+    # two guest sessions are two different accounts, not the same one
+    second = (await client.post("/api/auth/guest")).json()["init_data"]
+    assert second != token
+
+
+async def test_auth_login_widget_bad_signature_401(client):
+    r = await client.post(
+        "/api/auth/login",
+        json={"id": 1, "first_name": "X", "auth_date": int(time.time()), "hash": "deadbeef"},
+    )
+    assert r.status_code == 401

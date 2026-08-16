@@ -54,13 +54,38 @@ export function initTelegram(): void {
   wa.onEvent('themeChanged', () => applyTheme(wa))
 }
 
-// Outside Telegram (plain browser dev) initData is empty and the API will
-// reject it; VITE_DEV_INIT_DATA lets a dev paste a signed fixture locally.
-// See webapp/.env.example for how to generate one.
+// Plain-browser session, minted by /api/auth/login (Telegram Login Widget) —
+// lets the game open outside any Telegram client while staying the same
+// telegram_id account. Shaped exactly like Mini App initData (see api.py's
+// post_auth_login), so it's just another getInitData() fallback.
+const WEB_SESSION_KEY = 'teplee_web_session'
+
+export function getWebSession(): string | null {
+  return localStorage.getItem(WEB_SESSION_KEY)
+}
+
+export function setWebSession(token: string): void {
+  localStorage.setItem(WEB_SESSION_KEY, token)
+}
+
+export function clearWebSession(): void {
+  localStorage.removeItem(WEB_SESSION_KEY)
+}
+
+// Outside Telegram with no stored web session, initData is empty and the API
+// will reject it; VITE_DEV_INIT_DATA lets a dev paste a signed fixture
+// locally. See webapp/.env.example for how to generate one.
 export function getInitData(): string {
   const wa = getWebApp()
   if (wa?.initData) return wa.initData
-  return import.meta.env.VITE_DEV_INIT_DATA ?? ''
+  return getWebSession() ?? import.meta.env.VITE_DEV_INIT_DATA ?? ''
+}
+
+// True only for a live Telegram WebApp context — false for a plain-browser
+// session, even an authenticated one. Used to decide whether a 401 should
+// bounce back to the login widget (only makes sense outside Telegram).
+export function isInsideTelegram(): boolean {
+  return Boolean(getWebApp()?.initData)
 }
 
 export function hapticImpact(style: 'light' | 'medium' | 'heavy'): void {

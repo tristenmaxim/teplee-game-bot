@@ -1,9 +1,16 @@
+import hashlib
+import hmac
 import time
 from datetime import UTC, date, datetime
 
 import pytest
 
-from app.auth import InvalidInitData, sign_init_data, validate_init_data
+from app.auth import (
+    InvalidInitData,
+    sign_init_data,
+    validate_init_data,
+    validate_login_widget,
+)
 from app.services import challenge, clock, game, vectors
 from app.services.lemmatize import lemma_ru, lookup_candidates, normalize
 from tests.conftest import BOT_TOKEN
@@ -220,6 +227,38 @@ def test_init_data_expired():
     old = _make_init_data(auth_date=int(time.time()) - 100_000)
     with pytest.raises(InvalidInitData):
         validate_init_data(old, BOT_TOKEN)
+
+
+# --- Telegram Login Widget ---
+
+def _make_login_widget(user_id=777, auth_date=None, token=BOT_TOKEN):
+    pairs = {
+        "id": str(user_id),
+        "first_name": "Test",
+        "username": "tester",
+        "auth_date": str(auth_date or int(time.time())),
+    }
+    secret = hashlib.sha256(token.encode()).digest()
+    check_string = "\n".join(f"{k}={v}" for k, v in sorted(pairs.items()))
+    pairs["hash"] = hmac.new(secret, check_string.encode(), hashlib.sha256).hexdigest()
+    return pairs
+
+
+def test_login_widget_valid():
+    user = validate_login_widget(_make_login_widget(), BOT_TOKEN)
+    assert user.id == 777 and user.username == "tester"
+
+
+def test_login_widget_forged_signature():
+    forged = _make_login_widget(token="6666:OTHER_TOKEN")
+    with pytest.raises(InvalidInitData):
+        validate_login_widget(forged, BOT_TOKEN)
+
+
+def test_login_widget_expired():
+    old = _make_login_widget(auth_date=int(time.time()) - 1000)
+    with pytest.raises(InvalidInitData):
+        validate_login_widget(old, BOT_TOKEN, max_age_s=300)
 
 
 # --- vectors ---
