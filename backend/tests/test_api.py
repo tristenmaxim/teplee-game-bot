@@ -63,6 +63,24 @@ async def test_word_not_found_409(client):
     assert r.json()["detail"] == "word_not_found"
 
 
+async def test_hint_flow(client):
+    h = auth_headers(user_id=222)
+
+    r = await client.post("/api/hint", json={}, headers=h)
+    assert r.status_code == 409 and r.json()["detail"] == "no_attempts"
+
+    await client.post("/api/guess", json={"word": "собака"}, headers=h)  # rank 3
+    r = await client.post("/api/hint", json={}, headers=h)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["word"] == "кошка" and body["rank"] == 2 and not body["is_win"]
+
+    win = (await client.post("/api/guess", json={"word": "кот"}, headers=h)).json()
+    assert win["is_win"]
+    r = await client.post("/api/hint", json={}, headers=h)
+    assert r.status_code == 409 and r.json()["detail"] == "solved"
+
+
 async def test_lang_switch(client):
     h = auth_headers()
     assert (await client.post("/api/lang", json={"lang": "en"}, headers=h)).status_code == 200

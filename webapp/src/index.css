@@ -1,1 +1,67 @@
 @import "tailwindcss";
+
+:root {
+  --tg-bg: #ffffff;
+  --tg-text: #111111;
+  --tg-hint: #707579;
+  --tg-link: #2481cc;
+  --tg-button: #2481cc;
+  --tg-button-text: #ffffff;
+  --tg-secondary-bg: #f4f4f5;
+  --tg-header-bg: #ffffff;
+  --tg-section-bg: #ffffff;
+  --color-rank-hot: #34c759;
+  --color-rank-warm: #ffcc00;
+  --color-rank-cold: #8e8e93;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --tg-bg: #17212b;
+    --tg-text: #f5f5f5;
+    --tg-hint: #7d8b99;
+    --tg-secondary-bg: #0e1621;
+    --tg-header-bg: #17212b;
+    --tg-section-bg: #1e2a37;
+  }
+}
+
+@theme {
+  --color-tg-bg: var(--tg-bg);
+  --color-tg-text: var(--tg-text);
+  --color-tg-hint: var(--tg-hint);
+  --color-tg-link: var(--tg-link);
+  --color-tg-button: var(--tg-button);
+  --color-tg-button-text: var(--tg-button-text);
+  --color-tg-secondary-bg: var(--tg-secondary-bg);
+  --color-tg-header-bg: var(--tg-header-bg);
+  --color-tg-section-bg: var(--tg-section-bg);
+}
+
+body {
+  background: var(--tg-bg);
+}
+
+@keyframes shake {
+  10%,
+  90% {
+    transform: translateX(-1px);
+  }
+  20%,
+  80% {
+    transform: translateX(2px);
+  }
+  30%,
+  50%,
+  70% {
+    transform: translateX(-4px);
+  }
+  40%,
+  60% {
+    transform: translateX(4px);
+  }
+}
+
+.animate-shake {
+  animation: shake 0.4s;
+}

@@ -5,8 +5,9 @@ User-facing strings live in app.services.texts (DB-editable via admin UI),
 not as literals here — this module only assembles them.
 """
 
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 
+from app.config import get_settings
 from app.services import texts
 
 LANG_FLAG = {"ru": "🇷🇺", "en": "🇺🇸"}
@@ -101,9 +102,15 @@ def game_keyboard(
     a last-played friend's challenge still valid, so add a way back into it —
     otherwise "back to daily" is a one-way trip out of a challenge.
     """
+    open_app_row = [
+        InlineKeyboardButton(
+            text=texts.get("btn_open_app"), web_app=WebAppInfo(url=get_settings().webapp_url)
+        )
+    ]
     if in_challenge:
         return InlineKeyboardMarkup(
             inline_keyboard=[
+                open_app_row,
                 [InlineKeyboardButton(text=texts.get("btn_show_all"), callback_data="show_all")],
                 [InlineKeyboardButton(text=texts.get("btn_hint"), callback_data="hint")],
                 [
@@ -114,6 +121,7 @@ def game_keyboard(
             ]
         )
     rows = [
+        open_app_row,
         [InlineKeyboardButton(text=texts.get("btn_show_all"), callback_data="show_all")],
         [InlineKeyboardButton(text=texts.get("btn_hint"), callback_data="hint")],
         [InlineKeyboardButton(text=texts.get("btn_challenge_new"), callback_data="challenge_new")],

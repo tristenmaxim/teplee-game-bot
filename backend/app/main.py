@@ -10,6 +10,7 @@ from aiogram import Bot
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.admin_api import router as admin_router
 from app.api import router
@@ -66,5 +67,11 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Теплее!", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[get_settings().webapp_url],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Authorization", "Content-Type"],
+)
 app.include_router(router)
 app.include_router(admin_router)

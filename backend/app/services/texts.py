@@ -61,6 +61,7 @@ DEFAULTS: dict[str, str] = {
         "Теплее! #{day_no} {flag} | Попыток: {count} | {boxes} | "
         "Стрик: {streak}🔥 | t.me/{bot_username}"
     ),
+    "btn_open_app": "🎮 Открыть игру",
     "btn_show_all": "📋 Все слова",
     "btn_hint": "💡 Подсказка",
     "btn_back_to_daily": "🌡️ К слову дня",
@@ -109,6 +110,7 @@ LABELS: dict[str, str] = {
     "full_list_header": "Заголовок полного списка попыток",
     "full_list_empty": "Пусто: полный список попыток",
     "share_text": "Текст для шеринга результата",
+    "btn_open_app": "Кнопка «Открыть игру» (Mini App)",
     "btn_show_all": "Кнопка «Все слова»",
     "btn_hint": "Кнопка «Подсказка»",
     "btn_back_to_daily": "Кнопка «К слову дня»",

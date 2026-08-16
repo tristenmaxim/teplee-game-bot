@@ -11,7 +11,7 @@ from app.auth import InvalidInitData, TelegramUser, validate_init_data
 from app.config import get_settings
 from app.db import Database
 from app.services import challenge, game, vectors
-from app.services.game import WordNotFound
+from app.services.game import HintUnavailable, WordNotFound
 
 router = APIRouter(prefix="/api")
 
@@ -99,6 +99,11 @@ class GuessIn(BaseModel):
     lang: Literal["ru", "en"] | None = None
 
 
+class HintIn(BaseModel):
+    game: str = "d"
+    lang: Literal["ru", "en"] | None = None
+
+
 class LangIn(BaseModel):
     lang: Literal["ru", "en"]
 
@@ -137,6 +142,27 @@ async def post_guess(
         result = await game.guess(db, user.id, game_key, lang, body.word)
     except WordNotFound:
         raise HTTPException(409, "word_not_found") from None
+    return {
+        "word": result.word,
+        "rank": result.rank,
+        "is_new": result.is_new,
+        "is_win": result.is_win,
+        "attempts_count": result.attempts_count,
+        "streak": result.streak,
+    }
+
+
+@router.post("/hint")
+async def post_hint(
+    body: HintIn,
+    user: Annotated[TelegramUser, Depends(current_user)],
+    db: Annotated[Database, Depends(get_db)],
+):
+    game_key, lang = await resolve_game(db, user.id, body.game, body.lang)
+    try:
+        result = await game.hint(db, user.id, game_key, lang)
+    except HintUnavailable as e:
+        raise HTTPException(409, e.reason) from None
     return {
         "word": result.word,
         "rank": result.rank,
